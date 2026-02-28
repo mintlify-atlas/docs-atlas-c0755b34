@@ -1,0 +1,767 @@
+---
+title: 'Python Bindings'
+description: 'Native Python bindings for MoFA using UniFFI'
+---
+
+## Overview
+
+MoFA provides native Python bindings that expose the full power of the Rust core. The bindings are generated using Mozilla UniFFI and provide idiomatic Python APIs with type hints, async support, and full error handling.
+
+## Installation
+
+<Tabs>
+  <Tab title="From PyPI (Recommended)">
+    ```bash
+    pip install mofa-sdk
+    ```
+  </Tab>
+  
+  <Tab title="From Source">
+    ```bash
+    # Install maturin
+    pip install maturin
+    
+    # Build and install
+    cd crates/mofa-ffi
+    cargo build --release --features uniffi
+    ./generate-bindings.sh python
+    
+    # Install the wheel
+    cd bindings/python
+    pip install -e .
+    ```
+  </Tab>
+  
+  <Tab title="Development Setup">
+    ```bash
+    # Clone the repository
+    git clone https://github.com/mofa-org/mofa.git
+    cd mofa
+    
+    # Build FFI library
+    cargo build --release --features uniffi -p mofa-ffi
+    
+    # Generate bindings
+    cd crates/mofa-ffi
+    ./generate-bindings.sh python
+    
+    # Add to PYTHONPATH
+    export PYTHONPATH="$PWD/bindings/python:$PYTHONPATH"
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+### Basic LLM Agent
+
+```python
+import os
+from mofa import LLMAgentBuilder, MoFaError
+
+# Set your API key
+os.environ["OPENAI_API_KEY"] = "your-key-here"
+
+# Create an agent using the builder pattern
+builder = LLMAgentBuilder.create()
+builder = builder.set_id("my-agent")
+builder = builder.set_name("Python Agent")
+builder = builder.set_system_prompt("You are a helpful assistant.")
+builder = builder.set_temperature(0.7)
+builder = builder.set_max_tokens(1000)
+builder = builder.set_openai_provider(
+    os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL"),
+    model="gpt-3.5-turbo"
+)
+
+agent = builder.build()
+
+# Simple Q&A (no context retention)
+answer = agent.ask("What is Rust?")
+print(answer)
+
+# Multi-turn chat (with context)
+agent.chat("My favorite color is blue.")
+response = agent.chat("What did I just tell you?")
+print(response)  # Remembers: "You told me your favorite color is blue."
+```
+
+## API Reference
+
+### Namespace Functions
+
+```python
+from mofa import get_version, is_dora_available, new_llm_agent_builder
+
+# Get SDK version
+version = get_version()
+print(f"MoFA SDK version: {version}")
+
+# Check if Dora runtime is available
+has_dora = is_dora_available()
+print(f"Dora-rs available: {has_dora}")
+
+# Create a builder
+builder = new_llm_agent_builder()
+```
+
+### LLMAgentBuilder
+
+<ParamField path="set_id" type="(id: str) -> LLMAgentBuilder">
+  Set the agent ID. If not set, a UUID will be generated.
+</ParamField>
+
+<ParamField path="set_name" type="(name: str) -> LLMAgentBuilder">
+  Set the agent name for display purposes.
+</ParamField>
+
+<ParamField path="set_system_prompt" type="(prompt: str) -> LLMAgentBuilder">
+  Set the system prompt that defines agent behavior.
+</ParamField>
+
+<ParamField path="set_temperature" type="(temp: float) -> LLMAgentBuilder">
+  Set the LLM temperature (0.0 to 1.0). Higher values = more random.
+</ParamField>
+
+<ParamField path="set_max_tokens" type="(tokens: int) -> LLMAgentBuilder">
+  Set the maximum number of tokens to generate.
+</ParamField>
+
+<ParamField path="set_session_id" type="(id: str) -> LLMAgentBuilder">
+  Set the initial session ID for conversation tracking.
+</ParamField>
+
+<ParamField path="set_user_id" type="(id: str) -> LLMAgentBuilder">
+  Set the user ID for multi-tenant scenarios.
+</ParamField>
+
+<ParamField path="set_tenant_id" type="(id: str) -> LLMAgentBuilder">
+  Set the tenant ID for multi-tenant isolation.
+</ParamField>
+
+<ParamField path="set_context_window_size" type="(size: int) -> LLMAgentBuilder">
+  Set the sliding context window size (in conversation rounds).
+</ParamField>
+
+<ParamField path="set_openai_provider" type="(api_key: str, base_url: str | None, model: str | None) -> LLMAgentBuilder">
+  Configure the OpenAI provider. Falls back to environment variables.
+</ParamField>
+
+<ParamField path="build" type="() -> LLMAgent" required>
+  Build the agent. Raises `MoFaError` if configuration is invalid.
+</ParamField>
+
+### LLMAgent
+
+<ParamField path="agent_id" type="() -> str">
+  Get the agent ID.
+</ParamField>
+
+<ParamField path="name" type="() -> str">
+  Get the agent name.
+</ParamField>
+
+<ParamField path="ask" type="(question: str) -> str">
+  Simple Q&A without context retention. Each call is independent.
+</ParamField>
+
+<ParamField path="chat" type="(message: str) -> str">
+  Multi-turn chat with context retention. Maintains conversation history.
+</ParamField>
+
+<ParamField path="clear_history" type="() -> None">
+  Clear the conversation history.
+</ParamField>
+
+<ParamField path="get_history" type="() -> list[ChatMessage]">
+  Get the full conversation history as a list of messages.
+</ParamField>
+
+<ParamField path="get_last_output" type="() -> AgentOutputInfo">
+  Get structured output from the last execution (tools used, token usage, etc.).
+</ParamField>
+
+## Examples
+
+### Example 1: Multi-Provider Support
+
+<CodeGroup>
+
+```python OpenAI
+import os
+from mofa import LLMAgentBuilder
+
+builder = LLMAgentBuilder.create()
+builder = builder.set_name("OpenAI Agent")
+builder = builder.set_openai_provider(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=None,
+    model="gpt-4"
+)
+agent = builder.build()
+```
+
+```python Azure OpenAI
+import os
+from mofa import LLMAgentBuilder, LLMConfig, LLMProviderType, LLMAgent
+
+config = LLMConfig(
+    provider=LLMProviderType.AZURE,
+    api_key=os.getenv("AZURE_API_KEY"),
+    base_url="https://your-resource.openai.azure.com",
+    deployment="gpt-4-deployment",
+    model="gpt-4",
+    temperature=0.7,
+    max_tokens=1000,
+    system_prompt="You are a helpful assistant."
+)
+
+agent = LLMAgent.from_config(config, "azure-agent", "Azure Agent")
+```
+
+```python Ollama (Local)
+from mofa import LLMConfig, LLMProviderType, LLMAgent
+
+config = LLMConfig(
+    provider=LLMProviderType.OLLAMA,
+    model="llama2",
+    base_url="http://localhost:11434",
+    temperature=0.7,
+    max_tokens=500,
+    system_prompt="You are a helpful assistant."
+)
+
+agent = LLMAgent.from_config(config, "ollama-agent", "Ollama Agent")
+```
+
+```python Anthropic Claude
+import os
+from mofa import LLMConfig, LLMProviderType, LLMAgent
+
+config = LLMConfig(
+    provider=LLMProviderType.ANTHROPIC,
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    model="claude-3-sonnet-20240229",
+    temperature=0.7,
+    max_tokens=1000,
+    system_prompt="You are a helpful assistant."
+)
+
+agent = LLMAgent.from_config(config, "claude-agent", "Claude Agent")
+```
+
+```python Google Gemini
+import os
+from mofa import LLMConfig, LLMProviderType, LLMAgent
+
+config = LLMConfig(
+    provider=LLMProviderType.GEMINI,
+    api_key=os.getenv("GEMINI_API_KEY"),
+    model="gemini-pro",
+    temperature=0.7,
+    max_tokens=1000,
+    system_prompt="You are a helpful assistant."
+)
+
+agent = LLMAgent.from_config(config, "gemini-agent", "Gemini Agent")
+```
+
+</CodeGroup>
+
+### Example 2: Session Management
+
+```python
+from mofa import SessionManager, Session
+
+# In-memory session manager
+manager = SessionManager.new_in_memory()
+
+# Get or create a session
+session = manager.get_or_create("user-123")
+
+# Add messages
+session.add_message("user", "Hello!")
+session.add_message("assistant", "Hi there! How can I help?")
+
+# Retrieve history
+history = session.get_history(max_messages=10)
+for msg in history:
+    print(f"{msg.role}: {msg.content}")
+
+# Store metadata
+session.set_metadata("user_name", '"Alice"')  # JSON string
+session.set_metadata("preferences", '{"theme": "dark"}')
+
+# Retrieve metadata
+user_name = session.get_metadata("user_name")
+print(f"User name: {user_name}")
+
+# Save session (for file-backed storage)
+manager.save_session(session)
+
+# List all sessions
+all_sessions = manager.list_sessions()
+print(f"Total sessions: {len(all_sessions)}")
+
+# Delete a session
+manager.delete_session("user-123")
+```
+
+### Example 3: File-Backed Sessions
+
+```python
+import os
+from mofa import SessionManager
+
+# Create file-backed session manager
+workspace = "/tmp/mofa-sessions"
+os.makedirs(workspace, exist_ok=True)
+manager = SessionManager.new_with_storage(workspace)
+
+# Sessions are automatically persisted to JSONL files
+session = manager.get_or_create("conversation-1")
+session.add_message("user", "Remember this: my dog's name is Max.")
+
+# Save explicitly
+manager.save_session(session)
+
+# Sessions persist across restarts
+manager2 = SessionManager.new_with_storage(workspace)
+session2 = manager2.get_session("conversation-1")
+if session2:
+    history = session2.get_history(100)
+    print(f"Loaded {len(history)} messages from disk")
+```
+
+### Example 4: Custom Tool Registration
+
+```python
+import json
+from mofa import ToolRegistry, FfiToolCallback, FfiToolResult
+
+# Define a custom tool
+class CalculatorTool(FfiToolCallback):
+    def name(self):
+        return "calculator"
+    
+    def description(self):
+        return "Perform basic arithmetic operations"
+    
+    def parameters_schema_json(self):
+        return json.dumps({
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": ["add", "subtract", "multiply", "divide"]
+                },
+                "a": {"type": "number"},
+                "b": {"type": "number"}
+            },
+            "required": ["operation", "a", "b"]
+        })
+    
+    def execute(self, arguments_json):
+        try:
+            args = json.loads(arguments_json)
+            op = args["operation"]
+            a = args["a"]
+            b = args["b"]
+            
+            if op == "add":
+                result = a + b
+            elif op == "subtract":
+                result = a - b
+            elif op == "multiply":
+                result = a * b
+            elif op == "divide":
+                if b == 0:
+                    return FfiToolResult(
+                        success=False,
+                        output_json="null",
+                        error="Division by zero"
+                    )
+                result = a / b
+            else:
+                return FfiToolResult(
+                    success=False,
+                    output_json="null",
+                    error=f"Unknown operation: {op}"
+                )
+            
+            return FfiToolResult(
+                success=True,
+                output_json=json.dumps({"result": result}),
+                error=None
+            )
+        except Exception as e:
+            return FfiToolResult(
+                success=False,
+                output_json="null",
+                error=str(e)
+            )
+
+# Register the tool
+registry = ToolRegistry()
+registry.register_tool(CalculatorTool())
+
+# Execute the tool
+result = registry.execute_tool(
+    "calculator",
+    json.dumps({"operation": "add", "a": 3, "b": 7})
+)
+print(f"Success: {result.success}")
+print(f"Output: {result.output_json}")
+
+# List registered tools
+for tool in registry.list_tools():
+    print(f"Tool: {tool.name} - {tool.description}")
+```
+
+### Example 5: Weather Tool
+
+```python
+import json
+from mofa import ToolRegistry, FfiToolCallback, FfiToolResult
+
+class WeatherTool(FfiToolCallback):
+    """A mock weather tool for demonstration."""
+    
+    def name(self):
+        return "get_weather"
+    
+    def description(self):
+        return "Get current weather for a city (mock data)"
+    
+    def parameters_schema_json(self):
+        return json.dumps({
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "City name"
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["celsius", "fahrenheit"],
+                    "default": "celsius"
+                }
+            },
+            "required": ["city"]
+        })
+    
+    def execute(self, arguments_json):
+        args = json.loads(arguments_json)
+        city = args.get("city", "Unknown")
+        unit = args.get("unit", "celsius")
+        
+        # Mock weather data
+        weather_data = {
+            "city": city,
+            "temperature": 22 if unit == "celsius" else 72,
+            "unit": unit,
+            "condition": "sunny",
+            "humidity": 65,
+            "wind_speed": 10
+        }
+        
+        return FfiToolResult(
+            success=True,
+            output_json=json.dumps(weather_data),
+            error=None
+        )
+
+# Register and use
+registry = ToolRegistry()
+registry.register_tool(WeatherTool())
+
+result = registry.execute_tool(
+    "get_weather",
+    json.dumps({"city": "Tokyo", "unit": "celsius"})
+)
+
+if result.success:
+    weather = json.loads(result.output_json)
+    print(f"Weather in {weather['city']}: {weather['temperature']}°{weather['unit'][0].upper()}")
+    print(f"Condition: {weather['condition']}")
+```
+
+### Example 6: Conversation History
+
+```python
+from mofa import LLMAgentBuilder, ChatRole
+
+builder = LLMAgentBuilder.create()
+builder = builder.set_name("History Agent")
+builder = builder.set_openai_provider(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=None,
+    model="gpt-3.5-turbo"
+)
+agent = builder.build()
+
+# Have a conversation
+agent.chat("My name is Alice.")
+agent.chat("I'm learning about AI agents.")
+agent.chat("What's my name again?")
+
+# Get full history
+history = agent.get_history()
+print(f"Total messages: {len(history)}")
+
+for i, msg in enumerate(history):
+    role_name = msg.role.name  # SYSTEM, USER, ASSISTANT
+    content = msg.content
+    print(f"[{i+1}] {role_name}: {content[:50]}...")
+
+# Clear history
+print("\nClearing history...")
+agent.clear_history()
+history = agent.get_history()
+print(f"Messages after clear: {len(history)}")
+```
+
+## Error Handling
+
+### Error Types
+
+```python
+from mofa import MoFaError
+
+try:
+    agent = builder.build()
+    response = agent.ask("Hello")
+except MoFaError as e:
+    error_message = str(e)
+    
+    if "ConfigError" in error_message:
+        print("Configuration error:", e)
+    elif "RuntimeError" in error_message:
+        print("Runtime error:", e)
+    elif "LLMError" in error_message:
+        print("LLM provider error:", e)
+    elif "IoError" in error_message:
+        print("I/O error:", e)
+    elif "InvalidArgument" in error_message:
+        print("Invalid argument:", e)
+    elif "ToolError" in error_message:
+        print("Tool execution error:", e)
+    elif "SessionError" in error_message:
+        print("Session management error:", e)
+    else:
+        print("Unknown error:", e)
+```
+
+### Graceful Degradation
+
+```python
+import os
+from mofa import LLMAgentBuilder, MoFaError
+
+def create_agent_with_fallback():
+    """Create an agent with fallback to local model."""
+    
+    # Try OpenAI first
+    if os.getenv("OPENAI_API_KEY"):
+        try:
+            builder = LLMAgentBuilder.create()
+            builder = builder.set_openai_provider(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                base_url=None,
+                model="gpt-3.5-turbo"
+            )
+            return builder.build()
+        except MoFaError as e:
+            print(f"OpenAI unavailable: {e}")
+    
+    # Fallback to Ollama
+    try:
+        from mofa import LLMConfig, LLMProviderType, LLMAgent
+        config = LLMConfig(
+            provider=LLMProviderType.OLLAMA,
+            model="llama2",
+            base_url="http://localhost:11434"
+        )
+        return LLMAgent.from_config(config, "fallback", "Fallback Agent")
+    except MoFaError as e:
+        print(f"Ollama unavailable: {e}")
+        raise RuntimeError("No LLM provider available")
+
+agent = create_agent_with_fallback()
+```
+
+## Type Hints
+
+The Python bindings include full type hints:
+
+```python
+from typing import Optional, List
+from mofa import (
+    LLMAgent,
+    LLMAgentBuilder,
+    SessionManager,
+    Session,
+    ToolRegistry,
+    ChatMessage,
+    SessionMessageInfo,
+    ToolInfo,
+    FfiToolResult,
+    AgentOutputInfo,
+    TokenUsageInfo,
+    ToolUsageRecord,
+    MoFaError,
+)
+
+def create_configured_agent(
+    agent_id: str,
+    name: str,
+    api_key: str,
+    temperature: float = 0.7,
+    max_tokens: int = 1000
+) -> LLMAgent:
+    """Create a fully configured agent."""
+    builder = LLMAgentBuilder.create()
+    builder = builder.set_id(agent_id)
+    builder = builder.set_name(name)
+    builder = builder.set_temperature(temperature)
+    builder = builder.set_max_tokens(max_tokens)
+    builder = builder.set_openai_provider(api_key, None, "gpt-3.5-turbo")
+    return builder.build()
+
+def get_conversation_summary(agent: LLMAgent) -> List[str]:
+    """Get a summary of the conversation."""
+    history: List[ChatMessage] = agent.get_history()
+    return [f"{msg.role.name}: {msg.content}" for msg in history]
+```
+
+## Best Practices
+
+### 1. Environment Variables
+
+Store API keys in environment variables:
+
+```python
+import os
+from dotenv import load_dotenv
+
+# Load from .env file
+load_dotenv()
+
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY not set")
+```
+
+### 2. Context Window Management
+
+Limit context to prevent token overflow:
+
+```python
+builder = LLMAgentBuilder.create()
+builder = builder.set_context_window_size(10)  # Keep last 10 rounds
+agent = builder.build()
+```
+
+### 3. Session Persistence
+
+Use file-backed sessions for production:
+
+```python
+import os
+from mofa import SessionManager
+
+workspace = os.path.expanduser("~/.mofa/sessions")
+os.makedirs(workspace, exist_ok=True)
+manager = SessionManager.new_with_storage(workspace)
+```
+
+### 4. Tool Validation
+
+Validate tool parameters before execution:
+
+```python
+import json
+import jsonschema
+from mofa import FfiToolCallback, FfiToolResult
+
+class ValidatedTool(FfiToolCallback):
+    def execute(self, arguments_json):
+        try:
+            args = json.loads(arguments_json)
+            schema = json.loads(self.parameters_schema_json())
+            jsonschema.validate(args, schema)
+            
+            # Execute tool logic
+            result = self.perform_operation(args)
+            
+            return FfiToolResult(
+                success=True,
+                output_json=json.dumps(result),
+                error=None
+            )
+        except jsonschema.ValidationError as e:
+            return FfiToolResult(
+                success=False,
+                output_json="null",
+                error=f"Validation error: {e.message}"
+            )
+        except Exception as e:
+            return FfiToolResult(
+                success=False,
+                output_json="null",
+                error=str(e)
+            )
+```
+
+## Troubleshooting
+
+### Import Errors
+
+```python
+# If you get: ImportError: No module named 'mofa'
+# Make sure bindings are generated and in PYTHONPATH
+import sys
+sys.path.insert(0, "/path/to/mofa/crates/mofa-ffi/bindings/python")
+```
+
+### Library Not Found
+
+```bash
+# If you get: OSError: libmofa_ffi.so not found
+# Make sure the shared library is built
+cd mofa
+cargo build --release --features uniffi -p mofa-ffi
+
+# Copy to Python bindings directory
+cp target/release/libmofa_ffi.so crates/mofa-ffi/bindings/python/
+```
+
+### API Key Issues
+
+```python
+import os
+
+# Verify API key is set
+if not os.getenv("OPENAI_API_KEY"):
+    print("Error: OPENAI_API_KEY not set")
+    print("Set it with: export OPENAI_API_KEY=your-key")
+    exit(1)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Java Bindings" icon="java" href="/bindings/java">
+    Integrate MoFA with Java applications
+  </Card>
+  <Card title="Go Bindings" icon="golang" href="/bindings/go">
+    Use MoFA in Go projects
+  </Card>
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples/python_bindings">
+    Browse full Python examples
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Complete API documentation
+  </Card>
+</CardGroup>

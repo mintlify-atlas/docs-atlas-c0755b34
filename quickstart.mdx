@@ -1,80 +1,399 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Get from zero to a running MoFA agent in under 10 minutes
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
+This guide will help you create your first MoFA agent. By the end, you'll have a working LLM-powered agent that can answer questions and perform tasks.
 
-### Step 1: Set up your local environment
+<Note>
+**Prerequisites**: You need Rust 1.85 or newer. If you don't have Rust installed, see the [Installation guide](/installation).
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Set up your environment
 
-### Step 2: Deploy your changes
+<Steps>
+  <Step title="Clone the repository">
+    Get the MoFA source code:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    git clone https://github.com/mofa-org/mofa.git
+    cd mofa
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Verify installation">
+    Build the project to ensure everything works:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    cargo build
+    cargo test -p mofa-sdk
+    ```
 
-### Step 3: Go live
+    This will download dependencies and compile the framework. It may take a few minutes on first run.
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Configure your LLM provider">
+    Create a `.env` file in your project root:
+
+    <CodeGroup>
+    ```bash OpenAI
+    OPENAI_API_KEY=sk-...
+    OPENAI_MODEL=gpt-4o
+    ```
+
+    ```bash Anthropic
+    ANTHROPIC_API_KEY=sk-ant-...
+    ANTHROPIC_MODEL=claude-sonnet-4-5-latest
+    ```
+
+    ```bash Ollama
+    OPENAI_API_KEY=ollama
+    OPENAI_BASE_URL=http://localhost:11434/v1
+    OPENAI_MODEL=llama3.2
+    ```
+
+    ```bash Google Gemini
+    OPENAI_API_KEY=<your_openrouter_key>
+    OPENAI_BASE_URL=https://openrouter.ai/api/v1
+    OPENAI_MODEL=google/gemini-2.0-flash-001
+    ```
+    </CodeGroup>
+
+    <Tip>
+    MoFA supports any OpenAI-compatible endpoint. Use Ollama for local models or OpenRouter for access to multiple providers.
+    </Tip>
+  </Step>
+</Steps>
+
+## Run your first example
+
+Let's run a simple chat example to verify everything works:
+
+```bash
+cd examples
+cargo run -p chat_stream
+```
+
+You should see output like:
+
+```
+========================================
+  MoFA LLM Agent
+========================================
+
+Agent loaded: LLM Agent
+Agent ID: llm-agent-...
+
+--- Chat Demo ---
+
+Q: Hello! What can you help me with?
+A: I'm an AI assistant that can help you with...
+```
+
+<Check>
+If you see this output, congratulations! Your MoFA installation is working correctly.
+</Check>
+
+## Create your first agent
+
+Now let's build a custom agent from scratch. Create a new Rust project:
+
+```bash
+cargo new my_agent
+cd my_agent
+```
+
+### Add dependencies
+
+Edit `Cargo.toml`:
+
+```toml
+[dependencies]
+mofa-sdk = { git = "https://github.com/mofa-org/mofa", branch = "main" }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+```
+
+### Write your agent
+
+Create `src/main.rs` with this code:
+
+```rust
+use std::sync::Arc;
+use dotenvy::dotenv;
+use mofa_sdk::kernel::agent::prelude::*;
+use mofa_sdk::llm::{LLMClient, openai_from_env};
+
+struct LLMAgent {
+    id: String,
+    name: String,
+    capabilities: AgentCapabilities,
+    state: AgentState,
+    client: LLMClient,
+}
+
+impl LLMAgent {
+    fn new(client: LLMClient) -> Self {
+        Self {
+            id: "llm-agent-1".to_string(),
+            name: "LLM Agent".to_string(),
+            capabilities: AgentCapabilities::builder()
+                .tag("llm").tag("qa")
+                .input_type(InputType::Text)
+                .output_type(OutputType::Text)
+                .build(),
+            state: AgentState::Created,
+            client,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl MoFAAgent for LLMAgent {
+    fn id(&self)           -> &str               { &self.id }
+    fn name(&self)         -> &str               { &self.name }
+    fn capabilities(&self) -> &AgentCapabilities { &self.capabilities }
+    fn state(&self)        -> AgentState         { self.state.clone() }
+
+    async fn initialize(&mut self, _ctx: &AgentContext) -> AgentResult<()> {
+        self.state = AgentState::Ready;
+        Ok(())
+    }
+
+    async fn execute(&mut self, input: AgentInput, _ctx: &AgentContext) -> AgentResult<AgentOutput> {
+        self.state = AgentState::Executing;
+        let answer = self.client
+            .ask_with_system("You are a helpful Rust expert.", &input.to_text())
+            .await
+            .map_err(|e| AgentError::ExecutionFailed(e.to_string()))?;
+        self.state = AgentState::Ready;
+        Ok(AgentOutput::text(answer))
+    }
+
+    async fn shutdown(&mut self) -> AgentResult<()> {
+        self.state = AgentState::Shutdown;
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+    tracing_subscriber::fmt::init();
+
+    let provider = openai_from_env()?;
+    let client   = LLMClient::new(Arc::new(provider));
+
+    let mut agent = LLMAgent::new(client);
+    let ctx       = AgentContext::new("exec-001");
+
+    agent.initialize(&ctx).await?;
+
+    let output = agent.execute(
+        AgentInput::text("What is the borrow checker in Rust?"),
+        &ctx,
+    ).await?;
+
+    println!("{}", output.as_text().unwrap_or("(no answer)"));
+    agent.shutdown().await?;
+    Ok(())
+}
+```
+
+### Run your agent
+
+Make sure your `.env` file has your API key, then run:
+
+```bash
+cargo run
+```
+
+You should see a detailed explanation of Rust's borrow checker!
+
+## Understanding the code
+
+Let's break down what this agent does:
+
+<Steps>
+  <Step title="Define the agent struct">
+    ```rust
+    struct LLMAgent {
+        id: String,
+        name: String,
+        capabilities: AgentCapabilities,
+        state: AgentState,
+        client: LLMClient,
+    }
+    ```
+
+    Every MoFA agent needs an ID, name, capabilities, and state. The `LLMClient` handles communication with the LLM provider.
+  </Step>
+
+  <Step title="Implement MoFAAgent trait">
+    ```rust
+    #[async_trait::async_trait]
+    impl MoFAAgent for LLMAgent {
+        fn id(&self) -> &str { &self.id }
+        // ... other methods
+    }
+    ```
+
+    The `MoFAAgent` trait defines the interface all agents must implement. This includes lifecycle methods (`initialize`, `execute`, `shutdown`) and metadata accessors.
+  </Step>
+
+  <Step title="Execute method">
+    ```rust
+    async fn execute(&mut self, input: AgentInput, _ctx: &AgentContext) -> AgentResult<AgentOutput> {
+        self.state = AgentState::Executing;
+        let answer = self.client
+            .ask_with_system("You are a helpful Rust expert.", &input.to_text())
+            .await
+            .map_err(|e| AgentError::ExecutionFailed(e.to_string()))?;
+        self.state = AgentState::Ready;
+        Ok(AgentOutput::text(answer))
+    }
+    ```
+
+    The `execute` method is where the agent does its work. It receives input, processes it (here by calling the LLM), and returns output.
+  </Step>
+</Steps>
+
+## Explore more examples
+
+MoFA includes 27+ examples demonstrating different features:
+
+<CardGroup cols={2}>
+  <Card title="ReAct agent" icon="brain">
+    Reasoning + Acting pattern with tool use
+
+    ```bash
+    cargo run -p react_agent
+    ```
+  </Card>
+
+  <Card title="Secretary agent" icon="user-tie">
+    Human-in-the-loop workflow management
+
+    ```bash
+    cargo run -p secretary_agent
+    ```
+  </Card>
+
+  <Card title="Multi-agent coordination" icon="users">
+    Multiple agents collaborating
+
+    ```bash
+    cargo run -p multi_agent_coordination
+    ```
+  </Card>
+
+  <Card title="Rhai hot reload" icon="fire">
+    Runtime script hot-reloading
+
+    ```bash
+    cargo run -p rhai_hot_reload
+    ```
+  </Card>
+</CardGroup>
+
+### Example: ReAct agent with tools
+
+The ReAct pattern combines reasoning and acting. Here's a simplified version:
+
+```rust
+use mofa_sdk::react::{ReActAgent, ReActTool};
+use mofa_sdk::llm::{LLMAgent, LLMAgentBuilder};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create LLM agent
+    let llm_agent = Arc::new(
+        LLMAgentBuilder::from_env()?
+            .with_system_prompt("You are a helpful assistant.")
+            .build()
+    );
+
+    // Create ReAct agent with tools
+    let react_agent = ReActAgent::builder()
+        .with_llm(llm_agent)
+        .with_tool(Arc::new(WebSearchTool))
+        .with_tool(Arc::new(CalculatorTool))
+        .with_max_iterations(5)
+        .build_async()
+        .await?;
+
+    // Run a task
+    let result = react_agent
+        .run("What is Rust and when was it first released?")
+        .await?;
+
+    println!("Answer: {}", result.answer);
+    Ok(())
+}
+```
+
+Run the full example:
+
+```bash
+cd examples
+cargo run -p react_agent
+```
+
+## Using the high-level API
+
+For simpler use cases, use the high-level `LLMAgent`:
+
+```rust
+use mofa_sdk::llm::LLMAgentBuilder;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Build agent from environment
+    let agent = LLMAgentBuilder::from_env()?
+        .with_name("My Assistant")
+        .with_system_prompt("You are a helpful coding assistant.")
+        .with_temperature(0.7)
+        .build();
+
+    // Simple question-answer
+    let answer = agent.ask("Explain async/await in Rust").await?;
+    println!("{}", answer);
+
+    // Multi-turn conversation
+    agent.chat("My name is Alice").await?;
+    let response = agent.chat("What's my name?").await?;
+    println!("{}", response); // Should remember "Alice"
+
+    Ok(())
+}
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
+  <Card title="Installation guide" icon="download" href="/installation">
+    Learn about different installation methods and OS-specific setup
+  </Card>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+  <Card title="Architecture overview" icon="diagram-project" href="/architecture">
+    Understand the microkernel and plugin system
+  </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+  <Card title="API reference" icon="book" href="https://docs.rs/mofa-sdk">
+    Explore the complete Rust API documentation
+  </Card>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples">
+    Browse all 27+ examples
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+<Tip>
+**Tip**: Join our [Discord community](https://discord.com/invite/hKJZzDMMm9) to get help, share your projects, and connect with other MoFA developers.
+</Tip>

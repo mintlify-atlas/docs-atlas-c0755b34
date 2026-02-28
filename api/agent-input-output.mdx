@@ -1,0 +1,523 @@
+---
+title: 'AgentInput & AgentOutput'
+description: 'Input and output types for agent execution'
+icon: 'arrow-right-arrow-left'
+---
+
+# AgentInput & AgentOutput
+
+The `AgentInput` and `AgentOutput` types define the data structures for agent task execution. They support multiple formats including text, JSON, binary, and multimodal content.
+
+Location: `mofa-kernel/src/agent/types.rs`
+
+## AgentInput
+
+### Type Definition
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+pub enum AgentInput {
+    Text(String),
+    Texts(Vec<String>),
+    Json(serde_json::Value),
+    Map(HashMap<String, serde_json::Value>),
+    Binary(Vec<u8>),
+    Multimodal(Vec<serde_json::Value>),
+    #[default]
+    Empty,
+}
+```
+
+### Variants
+
+<ParamField path="Text" type="String">
+  Single text string input
+  
+  ```rust
+  let input = AgentInput::Text("Hello, agent!".to_string());
+  // Or using the builder
+  let input = AgentInput::text("Hello, agent!");
+  ```
+</ParamField>
+
+<ParamField path="Texts" type="Vec<String>">
+  Multiple text strings (multi-line text)
+  
+  ```rust
+  let input = AgentInput::Texts(vec![
+      "Line 1".to_string(),
+      "Line 2".to_string(),
+  ]);
+  ```
+</ParamField>
+
+<ParamField path="Json" type="serde_json::Value">
+  Structured JSON data
+  
+  ```rust
+  let input = AgentInput::json(serde_json::json!({
+      "action": "search",
+      "query": "Rust programming"
+  }));
+  ```
+</ParamField>
+
+<ParamField path="Map" type="HashMap<String, serde_json::Value>">
+  Key-value pairs
+  
+  ```rust
+  let mut map = HashMap::new();
+  map.insert("key1".to_string(), json!("value1"));
+  let input = AgentInput::map(map);
+  ```
+</ParamField>
+
+<ParamField path="Binary" type="Vec<u8>">
+  Binary data (images, files, etc.)
+  
+  ```rust
+  let data = vec![0x89, 0x50, 0x4E, 0x47]; // PNG header
+  let input = AgentInput::Binary(data);
+  ```
+</ParamField>
+
+<ParamField path="Multimodal" type="Vec<serde_json::Value>">
+  Multimodal content parts (text, images, audio)
+  
+  ```rust
+  let input = AgentInput::Multimodal(vec![
+      json!({"type": "text", "content": "Describe this image"}),
+      json!({"type": "image_url", "url": "https://..."}),
+  ]);
+  ```
+</ParamField>
+
+<ParamField path="Empty" type="()">
+  Empty input (default)
+</ParamField>
+
+### Methods
+
+<ResponseField name="text" type="fn(s: impl Into<String>) -> Self">
+  Creates a text input
+  
+  ```rust
+  let input = AgentInput::text("Query text");
+  ```
+</ResponseField>
+
+<ResponseField name="json" type="fn(value: serde_json::Value) -> Self">
+  Creates a JSON input
+  
+  ```rust
+  let input = AgentInput::json(json!({"key": "value"}));
+  ```
+</ResponseField>
+
+<ResponseField name="as_text" type="fn(&self) -> Option<&str>">
+  Gets text content if input is `Text` variant
+  
+  ```rust
+  if let Some(text) = input.as_text() {
+      println!("Text: {}", text);
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="to_text" type="fn(&self) -> String">
+  Converts any input variant to text representation
+  
+  ```rust
+  let text = input.to_text();
+  ```
+</ResponseField>
+
+<ResponseField name="as_json" type="fn(&self) -> Option<&serde_json::Value>">
+  Gets JSON content if input is `Json` variant
+</ResponseField>
+
+<ResponseField name="to_json" type="fn(&self) -> serde_json::Value">
+  Converts any input variant to JSON
+</ResponseField>
+
+<ResponseField name="is_empty" type="fn(&self) -> bool">
+  Checks if input is the `Empty` variant
+</ResponseField>
+
+## AgentOutput
+
+### Type Definition
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentOutput {
+    pub content: OutputContent,
+    pub metadata: HashMap<String, serde_json::Value>,
+    pub tools_used: Vec<ToolUsage>,
+    pub reasoning_steps: Vec<ReasoningStep>,
+    pub duration_ms: u64,
+    pub token_usage: Option<TokenUsage>,
+}
+```
+
+### Fields
+
+<ResponseField name="content" type="OutputContent" required>
+  The main output content. See [OutputContent](#outputcontent) below.
+</ResponseField>
+
+<ResponseField name="metadata" type="HashMap<String, serde_json::Value>">
+  Arbitrary metadata key-value pairs
+</ResponseField>
+
+<ResponseField name="tools_used" type="Vec<ToolUsage>">
+  List of tools used during execution. See [ToolUsage](#toolusage).
+</ResponseField>
+
+<ResponseField name="reasoning_steps" type="Vec<ReasoningStep>">
+  Step-by-step reasoning process (for ReAct agents, etc.)
+</ResponseField>
+
+<ResponseField name="duration_ms" type="u64">
+  Execution time in milliseconds
+</ResponseField>
+
+<ResponseField name="token_usage" type="Option<TokenUsage>">
+  LLM token usage statistics. See [TokenUsage](#tokenusage).
+</ResponseField>
+
+### Constructor Methods
+
+<ResponseField name="text" type="fn(s: impl Into<String>) -> Self">
+  Creates a text output
+  
+  ```rust
+  let output = AgentOutput::text("Task completed successfully");
+  ```
+</ResponseField>
+
+<ResponseField name="json" type="fn(value: serde_json::Value) -> Self">
+  Creates a JSON output
+  
+  ```rust
+  let output = AgentOutput::json(json!({
+      "status": "success",
+      "result": 42
+  }));
+  ```
+</ResponseField>
+
+<ResponseField name="error" type="fn(message: impl Into<String>) -> Self">
+  Creates an error output
+  
+  ```rust
+  let output = AgentOutput::error("Invalid input format");
+  ```
+</ResponseField>
+
+### Builder Methods
+
+<ResponseField name="with_duration" type="fn(self, duration_ms: u64) -> Self">
+  Sets execution duration
+  
+  ```rust
+  let output = AgentOutput::text("Done")
+      .with_duration(150);
+  ```
+</ResponseField>
+
+<ResponseField name="with_metadata" type="fn(self, key: impl Into<String>, value: serde_json::Value) -> Self">
+  Adds a metadata entry
+  
+  ```rust
+  let output = AgentOutput::text("Result")
+      .with_metadata("source", json!("database"))
+      .with_metadata("confidence", json!(0.95));
+  ```
+</ResponseField>
+
+<ResponseField name="with_tool_usage" type="fn(self, usage: ToolUsage) -> Self">
+  Adds a tool usage record
+</ResponseField>
+
+<ResponseField name="with_tools_used" type="fn(self, usages: Vec<ToolUsage>) -> Self">
+  Sets all tool usage records at once
+</ResponseField>
+
+<ResponseField name="with_reasoning_step" type="fn(self, step: ReasoningStep) -> Self">
+  Adds a reasoning step
+</ResponseField>
+
+<ResponseField name="with_reasoning_steps" type="fn(self, steps: Vec<ReasoningStep>) -> Self">
+  Sets all reasoning steps at once
+</ResponseField>
+
+<ResponseField name="with_token_usage" type="fn(self, usage: TokenUsage) -> Self">
+  Sets token usage statistics
+</ResponseField>
+
+### Query Methods
+
+<ResponseField name="as_text" type="fn(&self) -> Option<&str>">
+  Gets text content if output is text
+</ResponseField>
+
+<ResponseField name="to_text" type="fn(&self) -> String">
+  Converts output to text representation
+</ResponseField>
+
+<ResponseField name="is_error" type="fn(&self) -> bool">
+  Checks if output is an error
+</ResponseField>
+
+## OutputContent
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum OutputContent {
+    Text(String),
+    Texts(Vec<String>),
+    Json(serde_json::Value),
+    Binary(Vec<u8>),
+    Stream,
+    Error(String),
+    Empty,
+}
+```
+
+<ParamField path="Text" type="String">
+  Single text string output
+</ParamField>
+
+<ParamField path="Texts" type="Vec<String>">
+  Multiple text strings
+</ParamField>
+
+<ParamField path="Json" type="serde_json::Value">
+  Structured JSON output
+</ParamField>
+
+<ParamField path="Binary" type="Vec<u8>">
+  Binary data output
+</ParamField>
+
+<ParamField path="Stream" type="()">
+  Marker for streaming output (actual stream handled separately)
+</ParamField>
+
+<ParamField path="Error" type="String">
+  Error message
+</ParamField>
+
+<ParamField path="Empty" type="()">
+  Empty output
+</ParamField>
+
+## ToolUsage
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolUsage {
+    pub name: String,
+    pub input: serde_json::Value,
+    pub output: Option<serde_json::Value>,
+    pub success: bool,
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+```
+
+### Fields
+
+<ResponseField name="name" type="String" required>
+  Name of the tool that was used
+</ResponseField>
+
+<ResponseField name="input" type="serde_json::Value" required>
+  Input parameters passed to the tool
+</ResponseField>
+
+<ResponseField name="output" type="Option<serde_json::Value>">
+  Tool output (if successful)
+</ResponseField>
+
+<ResponseField name="success" type="bool" required>
+  Whether the tool execution succeeded
+</ResponseField>
+
+<ResponseField name="error" type="Option<String>">
+  Error message (if failed)
+</ResponseField>
+
+<ResponseField name="duration_ms" type="u64" required>
+  Tool execution duration in milliseconds
+</ResponseField>
+
+### Constructor Methods
+
+```rust
+impl ToolUsage {
+    pub fn success(
+        name: impl Into<String>,
+        input: serde_json::Value,
+        output: serde_json::Value,
+        duration_ms: u64,
+    ) -> Self;
+    
+    pub fn failure(
+        name: impl Into<String>,
+        input: serde_json::Value,
+        error: impl Into<String>,
+        duration_ms: u64,
+    ) -> Self;
+}
+```
+
+## ReasoningStep
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReasoningStep {
+    pub step_type: ReasoningStepType,
+    pub content: String,
+    pub step_number: usize,
+    pub timestamp_ms: u64,
+}
+```
+
+### Fields
+
+<ResponseField name="step_type" type="ReasoningStepType" required>
+  Type of reasoning step (Thought, Action, Observation, etc.)
+</ResponseField>
+
+<ResponseField name="content" type="String" required>
+  Content of the reasoning step
+</ResponseField>
+
+<ResponseField name="step_number" type="usize" required>
+  Sequential step number
+</ResponseField>
+
+<ResponseField name="timestamp_ms" type="u64" required>
+  Timestamp in milliseconds
+</ResponseField>
+
+### ReasoningStepType
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum ReasoningStepType {
+    Thought,
+    Action,
+    Observation,
+    Reflection,
+    Decision,
+    FinalAnswer,
+    Custom(String),
+}
+```
+
+## TokenUsage
+
+```rust
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+```
+
+### Constructor
+
+```rust
+impl TokenUsage {
+    pub fn new(prompt_tokens: u32, completion_tokens: u32) -> Self {
+        let total_tokens = prompt_tokens + completion_tokens;
+        Self { prompt_tokens, completion_tokens, total_tokens }
+    }
+}
+```
+
+## AgentState
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+pub enum AgentState {
+    #[default]
+    Created,
+    Initializing,
+    Ready,
+    Running,
+    Executing,
+    Paused,
+    Interrupted,
+    ShuttingDown,
+    Shutdown,
+    Failed,
+    Destroyed,
+    Error(String),
+}
+```
+
+### State Transitions
+
+```rust
+impl AgentState {
+    pub fn can_transition_to(&self, target: &AgentState) -> bool;
+    pub fn transition_to(&self, target: AgentState) -> Result<AgentState, AgentError>;
+    pub fn is_active(&self) -> bool;
+    pub fn is_terminal(&self) -> bool;
+}
+```
+
+Valid state transitions:
+- `Created → Initializing`
+- `Initializing → Ready | Error | Failed`
+- `Ready → Executing | Running | ShuttingDown`
+- `Running → Paused | Executing | ShuttingDown | Error | Failed`
+- `Executing → Ready | Paused | Interrupted | Error | Failed`
+- `Paused → Ready | Executing | ShuttingDown`
+- `Interrupted → Ready | ShuttingDown`
+- `ShuttingDown → Shutdown`
+
+## Example Usage
+
+```rust
+use mofa_sdk::kernel::{AgentInput, AgentOutput, AgentState, ToolUsage, ReasoningStep, ReasoningStepType, TokenUsage};
+
+// Create input
+let input = AgentInput::text("Analyze the data");
+
+// Create output with full details
+let output = AgentOutput::text("Analysis complete")
+    .with_duration(250)
+    .with_metadata("model", json!("gpt-4o"))
+    .with_tool_usage(ToolUsage::success(
+        "database_query",
+        json!({"query": "SELECT * FROM data"}),
+        json!({"rows": 42}),
+        100,
+    ))
+    .with_reasoning_step(ReasoningStep::new(
+        ReasoningStepType::Thought,
+        "Need to query the database",
+        1,
+    ))
+    .with_token_usage(TokenUsage::new(150, 75));
+
+println!("Result: {}", output.to_text());
+println!("Duration: {}ms", output.duration_ms);
+println!("Tools used: {}", output.tools_used.len());
+```
+
+## See Also
+
+- [MoFAAgent](/api/mofa-agent) - Core agent trait
+- [AgentContext](/api/agent-context) - Execution context
+- [AgentCapabilities](/api/agent-capabilities) - Capability system

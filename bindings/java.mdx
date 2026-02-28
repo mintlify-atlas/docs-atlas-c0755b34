@@ -1,0 +1,795 @@
+---
+title: 'Java Bindings'
+description: 'Native Java bindings for MoFA using UniFFI'
+---
+
+## Overview
+
+MoFA provides native Java bindings generated through Mozilla UniFFI. These bindings offer full access to MoFA's Rust core with idiomatic Java APIs, Maven/Gradle integration, and comprehensive error handling.
+
+## Installation
+
+<Tabs>
+  <Tab title="Maven">
+    Add the following to your `pom.xml`:
+    
+    ```xml
+    <dependencies>
+        <dependency>
+            <groupId>org.mofa</groupId>
+            <artifactId>mofa-sdk</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+    </dependencies>
+    ```
+  </Tab>
+  
+  <Tab title="Gradle">
+    Add to your `build.gradle`:
+    
+    ```groovy
+    dependencies {
+        implementation 'org.mofa:mofa-sdk:0.1.0'
+    }
+    ```
+    
+    Or for Gradle Kotlin DSL:
+    
+    ```kotlin
+    dependencies {
+        implementation("org.mofa:mofa-sdk:0.1.0")
+    }
+    ```
+  </Tab>
+  
+  <Tab title="From Source">
+    ```bash
+    # Install UniFFI bindgen for Java
+    cargo install uniffi-bindgen-java
+    
+    # Build FFI library
+    cd mofa
+    cargo build --release --features uniffi -p mofa-ffi
+    
+    # Generate Java bindings
+    cd crates/mofa-ffi
+    ./generate-bindings.sh java
+    
+    # Build with Maven
+    cd bindings/java
+    mvn clean install
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+### Basic LLM Agent
+
+```java
+package com.example;
+
+import com.mofa.*;
+import java.util.List;
+
+public class BasicAgent {
+    public static void main(String[] args) throws MoFaError {
+        // Set your API key
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.err.println("Error: OPENAI_API_KEY not set");
+            System.exit(1);
+        }
+        
+        // Create an agent using the builder pattern
+        LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+        builder = builder.setId("my-agent");
+        builder = builder.setName("Java Agent");
+        builder = builder.setSystemPrompt("You are a helpful assistant.");
+        builder = builder.setTemperature(0.7f);
+        builder = builder.setMaxTokens(1000);
+        builder = builder.setOpenaiProvider(
+            apiKey,
+            System.getenv("OPENAI_BASE_URL"),
+            "gpt-3.5-turbo"
+        );
+        
+        LLMAgent agent = builder.build();
+        
+        // Simple Q&A (no context retention)
+        String answer = agent.ask("What is Java?");
+        System.out.println("Answer: " + answer);
+        
+        // Multi-turn chat (with context)
+        agent.chat("My favorite language is Java.");
+        String response = agent.chat("What did I just tell you?");
+        System.out.println("Response: " + response);
+        
+        // Get conversation history
+        List<ChatMessage> history = agent.getHistory();
+        System.out.println("Total messages: " + history.size());
+        
+        // Clear history
+        agent.clearHistory();
+    }
+}
+```
+
+## API Reference
+
+### UniFFI Namespace
+
+<ParamField path="UniFFI.INSTANCE.getVersion" type="() -> String">
+  Get the MoFA SDK version string.
+</ParamField>
+
+<ParamField path="UniFFI.INSTANCE.isDoraAvailable" type="() -> boolean">
+  Check if Dora-rs distributed runtime is available.
+</ParamField>
+
+<ParamField path="UniFFI.INSTANCE.newLlmAgentBuilder" type="() -> LLMAgentBuilder">
+  Create a new LLM agent builder.
+</ParamField>
+
+### LLMAgentBuilder
+
+<ParamField path="setId" type="(String id) -> LLMAgentBuilder">
+  Set the agent ID. If not set, a UUID will be generated.
+</ParamField>
+
+<ParamField path="setName" type="(String name) -> LLMAgentBuilder">
+  Set the agent name for display purposes.
+</ParamField>
+
+<ParamField path="setSystemPrompt" type="(String prompt) -> LLMAgentBuilder">
+  Set the system prompt that defines agent behavior.
+</ParamField>
+
+<ParamField path="setTemperature" type="(float temp) -> LLMAgentBuilder">
+  Set the LLM temperature (0.0 to 1.0). Higher values produce more random outputs.
+</ParamField>
+
+<ParamField path="setMaxTokens" type="(int tokens) -> LLMAgentBuilder">
+  Set the maximum number of tokens to generate.
+</ParamField>
+
+<ParamField path="setSessionId" type="(String id) -> LLMAgentBuilder">
+  Set the initial session ID for conversation tracking.
+</ParamField>
+
+<ParamField path="setUserId" type="(String id) -> LLMAgentBuilder">
+  Set the user ID for multi-tenant scenarios.
+</ParamField>
+
+<ParamField path="setTenantId" type="(String id) -> LLMAgentBuilder">
+  Set the tenant ID for multi-tenant isolation.
+</ParamField>
+
+<ParamField path="setContextWindowSize" type="(int size) -> LLMAgentBuilder">
+  Set the sliding context window size (in conversation rounds).
+</ParamField>
+
+<ParamField path="setOpenaiProvider" type="(String apiKey, String baseUrl, String model) -> LLMAgentBuilder">
+  Configure the OpenAI provider. `baseUrl` and `model` can be null for defaults.
+</ParamField>
+
+<ParamField path="build" type="() -> LLMAgent" required>
+  Build the agent. Throws `MoFaError` if configuration is invalid.
+</ParamField>
+
+### LLMAgent
+
+<ParamField path="agentId" type="() -> String">
+  Get the agent ID.
+</ParamField>
+
+<ParamField path="name" type="() -> String">
+  Get the agent name.
+</ParamField>
+
+<ParamField path="ask" type="(String question) -> String">
+  Simple Q&A without context retention. Each call is independent.
+</ParamField>
+
+<ParamField path="chat" type="(String message) -> String">
+  Multi-turn chat with context retention. Maintains conversation history.
+</ParamField>
+
+<ParamField path="clearHistory" type="() -> void">
+  Clear the conversation history.
+</ParamField>
+
+<ParamField path="getHistory" type="() -> List<ChatMessage>">
+  Get the full conversation history as a list of messages.
+</ParamField>
+
+<ParamField path="getLastOutput" type="() -> AgentOutputInfo">
+  Get structured output from the last execution (tools used, token usage, etc.).
+</ParamField>
+
+## Examples
+
+### Example 1: Multi-Provider Support
+
+<CodeGroup>
+
+```java OpenAI
+import com.mofa.*;
+
+public class OpenAIExample {
+    public static void main(String[] args) throws MoFaError {
+        LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+        builder = builder.setName("OpenAI Agent");
+        builder = builder.setOpenaiProvider(
+            System.getenv("OPENAI_API_KEY"),
+            null,  // Use default base URL
+            "gpt-4"
+        );
+        LLMAgent agent = builder.build();
+        
+        String response = agent.ask("What is Java?");
+        System.out.println(response);
+    }
+}
+```
+
+```java Azure OpenAI
+import com.mofa.*;
+
+public class AzureExample {
+    public static void main(String[] args) throws MoFaError {
+        LLMConfig config = new LLMConfig(
+            LLMProviderType.AZURE,
+            "gpt-4",
+            System.getenv("AZURE_API_KEY"),
+            "https://your-resource.openai.azure.com",
+            "gpt-4-deployment",
+            0.7f,
+            1000,
+            "You are a helpful assistant."
+        );
+        
+        LLMAgent agent = LLMAgent.fromConfig(
+            config,
+            "azure-agent",
+            "Azure Agent"
+        );
+        
+        String response = agent.ask("Hello!");
+        System.out.println(response);
+    }
+}
+```
+
+```java Ollama (Local)
+import com.mofa.*;
+
+public class OllamaExample {
+    public static void main(String[] args) throws MoFaError {
+        LLMConfig config = new LLMConfig(
+            LLMProviderType.OLLAMA,
+            "llama2",
+            null,  // No API key needed
+            "http://localhost:11434",
+            null,
+            0.7f,
+            500,
+            "You are a helpful assistant."
+        );
+        
+        LLMAgent agent = LLMAgent.fromConfig(
+            config,
+            "ollama-agent",
+            "Ollama Agent"
+        );
+        
+        String response = agent.chat("Tell me a joke.");
+        System.out.println(response);
+    }
+}
+```
+
+</CodeGroup>
+
+### Example 2: Session Management
+
+```java
+import com.mofa.*;
+import java.util.List;
+
+public class SessionExample {
+    public static void main(String[] args) throws MoFaError {
+        // Create in-memory session manager
+        SessionManager manager = SessionManager.newInMemory();
+        
+        // Get or create a session
+        Session session = manager.getOrCreate("user-123");
+        
+        // Add messages
+        session.addMessage("user", "Hello!");
+        session.addMessage("assistant", "Hi there! How can I help?");
+        session.addMessage("user", "What's the weather like?");
+        
+        // Retrieve history
+        List<SessionMessageInfo> history = session.getHistory(10);
+        System.out.println("Conversation history:");
+        for (SessionMessageInfo msg : history) {
+            System.out.println(msg.getRole() + ": " + msg.getContent());
+        }
+        
+        // Store metadata
+        session.setMetadata("user_name", "\"Alice\"");  // JSON string
+        session.setMetadata("preferences", "{\"theme\": \"dark\"}");
+        
+        // Retrieve metadata
+        String userName = session.getMetadata("user_name");
+        System.out.println("User name: " + userName);
+        
+        // Save session
+        manager.saveSession(session);
+        
+        // List all sessions
+        List<String> allSessions = manager.listSessions();
+        System.out.println("Total sessions: " + allSessions.size());
+        
+        // Delete session
+        boolean deleted = manager.deleteSession("user-123");
+        System.out.println("Session deleted: " + deleted);
+    }
+}
+```
+
+### Example 3: File-Backed Sessions
+
+```java
+import com.mofa.*;
+import java.io.File;
+
+public class PersistentSessionExample {
+    public static void main(String[] args) throws MoFaError {
+        // Create workspace directory
+        String workspace = System.getProperty("user.home") + "/.mofa/sessions";
+        new File(workspace).mkdirs();
+        
+        // Create file-backed session manager
+        SessionManager manager = SessionManager.newWithStorage(workspace);
+        
+        // Sessions are automatically persisted to JSONL files
+        Session session = manager.getOrCreate("conversation-1");
+        session.addMessage("user", "Remember this: my dog's name is Max.");
+        
+        // Save explicitly
+        manager.saveSession(session);
+        
+        System.out.println("Session saved to: " + workspace);
+        
+        // Sessions persist across restarts
+        SessionManager manager2 = SessionManager.newWithStorage(workspace);
+        Session session2 = manager2.getSession("conversation-1");
+        if (session2 != null) {
+            List<SessionMessageInfo> history = session2.getHistory(100);
+            System.out.println("Loaded " + history.size() + " messages from disk");
+        }
+    }
+}
+```
+
+### Example 4: Custom Tool Registration
+
+```java
+import com.mofa.*;
+import org.json.JSONObject;
+
+public class ToolExample {
+    
+    // Define a custom tool
+    static class CalculatorTool implements FfiToolCallback {
+        @Override
+        public String name() {
+            return "calculator";
+        }
+        
+        @Override
+        public String description() {
+            return "Perform basic arithmetic operations";
+        }
+        
+        @Override
+        public String parametersSchemaJson() {
+            return new JSONObject()
+                .put("type", "object")
+                .put("properties", new JSONObject()
+                    .put("operation", new JSONObject()
+                        .put("type", "string")
+                        .put("enum", new String[]{"add", "subtract", "multiply", "divide"})
+                    )
+                    .put("a", new JSONObject().put("type", "number"))
+                    .put("b", new JSONObject().put("type", "number"))
+                )
+                .put("required", new String[]{"operation", "a", "b"})
+                .toString();
+        }
+        
+        @Override
+        public FfiToolResult execute(String argumentsJson) {
+            try {
+                JSONObject args = new JSONObject(argumentsJson);
+                String op = args.getString("operation");
+                double a = args.getDouble("a");
+                double b = args.getDouble("b");
+                
+                double result;
+                switch (op) {
+                    case "add":
+                        result = a + b;
+                        break;
+                    case "subtract":
+                        result = a - b;
+                        break;
+                    case "multiply":
+                        result = a * b;
+                        break;
+                    case "divide":
+                        if (b == 0) {
+                            return new FfiToolResult(
+                                false,
+                                "null",
+                                "Division by zero"
+                            );
+                        }
+                        result = a / b;
+                        break;
+                    default:
+                        return new FfiToolResult(
+                            false,
+                            "null",
+                            "Unknown operation: " + op
+                        );
+                }
+                
+                return new FfiToolResult(
+                    true,
+                    new JSONObject().put("result", result).toString(),
+                    null
+                );
+            } catch (Exception e) {
+                return new FfiToolResult(
+                    false,
+                    "null",
+                    e.getMessage()
+                );
+            }
+        }
+    }
+    
+    public static void main(String[] args) throws MoFaError {
+        // Create registry and register tool
+        ToolRegistry registry = new ToolRegistry();
+        registry.registerTool(new CalculatorTool());
+        
+        // List registered tools
+        System.out.println("Registered tools:");
+        for (ToolInfo tool : registry.listTools()) {
+            System.out.println("  - " + tool.getName() + ": " + tool.getDescription());
+        }
+        
+        // Execute the tool
+        FfiToolResult result = registry.executeTool(
+            "calculator",
+            new JSONObject()
+                .put("operation", "add")
+                .put("a", 3)
+                .put("b", 7)
+                .toString()
+        );
+        
+        System.out.println("Success: " + result.getSuccess());
+        System.out.println("Output: " + result.getOutputJson());
+    }
+}
+```
+
+### Example 5: Conversation History
+
+```java
+import com.mofa.*;
+import java.util.List;
+
+public class HistoryExample {
+    public static void main(String[] args) throws MoFaError {
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        
+        LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+        builder = builder.setName("History Agent");
+        builder = builder.setOpenaiProvider(apiKey, null, "gpt-3.5-turbo");
+        LLMAgent agent = builder.build();
+        
+        // Have a conversation
+        agent.chat("My name is Alice.");
+        agent.chat("I'm learning about AI agents.");
+        agent.chat("What's my name again?");
+        
+        // Get full history
+        List<ChatMessage> history = agent.getHistory();
+        System.out.println("Total messages: " + history.size());
+        
+        for (int i = 0; i < history.size(); i++) {
+            ChatMessage msg = history.get(i);
+            String preview = msg.getContent().length() > 50
+                ? msg.getContent().substring(0, 50) + "..."
+                : msg.getContent();
+            System.out.println("[" + (i + 1) + "] " + msg.getRole().name() + ": " + preview);
+        }
+        
+        // Clear history
+        System.out.println("\nClearing history...");
+        agent.clearHistory();
+        history = agent.getHistory();
+        System.out.println("Messages after clear: " + history.size());
+    }
+}
+```
+
+## Error Handling
+
+### Exception Types
+
+```java
+import com.mofa.MoFaError;
+
+public class ErrorHandlingExample {
+    public static void main(String[] args) {
+        try {
+            LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+            builder = builder.setOpenaiProvider(
+                System.getenv("OPENAI_API_KEY"),
+                null,
+                "gpt-3.5-turbo"
+            );
+            LLMAgent agent = builder.build();
+            
+            String response = agent.ask("Hello!");
+            System.out.println(response);
+            
+        } catch (MoFaError e) {
+            String message = e.getMessage();
+            
+            if (message.contains("ConfigError")) {
+                System.err.println("Configuration error: " + e.getMessage());
+            } else if (message.contains("RuntimeError")) {
+                System.err.println("Runtime error: " + e.getMessage());
+            } else if (message.contains("LLMError")) {
+                System.err.println("LLM provider error: " + e.getMessage());
+            } else if (message.contains("IoError")) {
+                System.err.println("I/O error: " + e.getMessage());
+            } else if (message.contains("InvalidArgument")) {
+                System.err.println("Invalid argument: " + e.getMessage());
+            } else if (message.contains("ToolError")) {
+                System.err.println("Tool execution error: " + e.getMessage());
+            } else if (message.contains("SessionError")) {
+                System.err.println("Session management error: " + e.getMessage());
+            } else {
+                System.err.println("Unknown error: " + e.getMessage());
+            }
+            
+            e.printStackTrace();
+            System.exit(1);
+        }
+    }
+}
+```
+
+### Graceful Degradation
+
+```java
+import com.mofa.*;
+
+public class FallbackExample {
+    
+    public static LLMAgent createAgentWithFallback() throws RuntimeException {
+        // Try OpenAI first
+        String openaiKey = System.getenv("OPENAI_API_KEY");
+        if (openaiKey != null && !openaiKey.isEmpty()) {
+            try {
+                LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+                builder = builder.setOpenaiProvider(openaiKey, null, "gpt-3.5-turbo");
+                return builder.build();
+            } catch (MoFaError e) {
+                System.err.println("OpenAI unavailable: " + e.getMessage());
+            }
+        }
+        
+        // Fallback to Ollama
+        try {
+            LLMConfig config = new LLMConfig(
+                LLMProviderType.OLLAMA,
+                "llama2",
+                null,
+                "http://localhost:11434",
+                null,
+                null,
+                null,
+                null
+            );
+            return LLMAgent.fromConfig(config, "fallback", "Fallback Agent");
+        } catch (MoFaError e) {
+            System.err.println("Ollama unavailable: " + e.getMessage());
+            throw new RuntimeException("No LLM provider available");
+        }
+    }
+    
+    public static void main(String[] args) {
+        LLMAgent agent = createAgentWithFallback();
+        // Use agent...
+    }
+}
+```
+
+## Best Practices
+
+### 1. Environment Variables
+
+```java
+public class ConfigExample {
+    public static void main(String[] args) {
+        // Load API key from environment
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.err.println("Error: OPENAI_API_KEY not set");
+            System.err.println("Set it with: export OPENAI_API_KEY=your-key");
+            System.exit(1);
+        }
+        
+        // Use the key
+        // ...
+    }
+}
+```
+
+### 2. Resource Management
+
+```java
+public class ResourceExample {
+    public static void main(String[] args) throws MoFaError {
+        LLMAgent agent = null;
+        try {
+            LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+            builder = builder.setOpenaiProvider(
+                System.getenv("OPENAI_API_KEY"),
+                null,
+                "gpt-3.5-turbo"
+            );
+            agent = builder.build();
+            
+            String response = agent.ask("Hello!");
+            System.out.println(response);
+            
+        } finally {
+            // UniFFI handles cleanup automatically via GC
+            // No manual resource management needed
+        }
+    }
+}
+```
+
+### 3. Context Window Management
+
+```java
+public class ContextExample {
+    public static void main(String[] args) throws MoFaError {
+        LLMAgentBuilder builder = UniFFI.INSTANCE.newLlmAgentBuilder();
+        builder = builder.setContextWindowSize(10);  // Keep last 10 rounds
+        builder = builder.setOpenaiProvider(
+            System.getenv("OPENAI_API_KEY"),
+            null,
+            "gpt-3.5-turbo"
+        );
+        LLMAgent agent = builder.build();
+        
+        // Agent will automatically maintain sliding window
+    }
+}
+```
+
+## Maven Configuration
+
+### Complete pom.xml
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <groupId>com.example</groupId>
+    <artifactId>mofa-java-example</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    
+    <dependencies>
+        <!-- MoFA SDK -->
+        <dependency>
+            <groupId>org.mofa</groupId>
+            <artifactId>mofa-sdk</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+        
+        <!-- JSON processing (for tools) -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20230227</version>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+            </plugin>
+            
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>com.example.Main</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+## Troubleshooting
+
+### Library Not Found
+
+```bash
+# If you get: UnsatisfiedLinkError: no mofa_ffi in java.library.path
+# Make sure the shared library is built and accessible
+
+cd mofa
+cargo build --release --features uniffi -p mofa-ffi
+
+# Set library path when running
+java -Djava.library.path=/path/to/mofa/target/release -jar app.jar
+```
+
+### API Key Issues
+
+```java
+// Verify API key is set
+String apiKey = System.getenv("OPENAI_API_KEY");
+if (apiKey == null || apiKey.isEmpty()) {
+    System.err.println("Error: OPENAI_API_KEY not set");
+    System.err.println("Set it with: export OPENAI_API_KEY=your-key");
+    System.exit(1);
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Kotlin Bindings" icon="k" href="/bindings/kotlin">
+    Use MoFA with Kotlin and coroutines
+  </Card>
+  <Card title="Python Bindings" icon="python" href="/bindings/python">
+    Python integration guide
+  </Card>
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples/java_bindings">
+    Browse full Java examples
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Complete API documentation
+  </Card>
+</CardGroup>

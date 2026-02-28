@@ -1,0 +1,529 @@
+---
+title: WASM Plugin Development
+description: Build sandboxed WebAssembly plugins for maximum security and portability
+---
+
+# WASM Plugin Development
+
+WebAssembly (WASM) plugins provide a secure, sandboxed execution environment for untrusted code. MoFA's WASM runtime enables you to run plugins from any language that compiles to WASM with strict resource limits and memory isolation.
+
+## Why WASM Plugins?
+
+<CardGroup cols={2}>
+  <Card title="Security" icon="shield">
+    Complete sandboxing with no direct system access
+  </Card>
+  <Card title="Portability" icon="globe">
+    Write in any language that targets WASM
+  </Card>
+  <Card title="Performance" icon="bolt">
+    Near-native execution speed
+  </Card>
+  <Card title="Resource Control" icon="gauge">
+    Strict memory and execution time limits
+  </Card>
+</CardGroup>
+
+## Architecture
+
+MoFA's WASM runtime architecture:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                      Host (MoFA)                            │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │              WasmRuntime                               │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐     │   │
+│  │  │  Engine   │  │   Linker  │  │   Store   │     │   │
+│  │  └──────────┘  └──────────┘  └──────────┘     │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                            │                                │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │              Host Functions                           │   │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐        │   │
+│  │  │  log   │ │ get_   │ │ send_  │ │ call_  │        │   │
+│  │  │        │ │ config │ │ message│ │ tool   │        │   │
+│  │  └────────┘ └────────┘ └────────┘ └────────┘        │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                            │                                │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │              WASM Sandbox                             │   │
+│  │  ┌─────────────────────────────────────────────────┐     │   │
+│  │  │            Plugin Instance                  │     │   │
+│  │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐     │     │   │
+│  │  │  │ Memory  │  │ Exports │  │ Imports │     │     │   │
+│  │  │  └─────────┘  └─────────┘  └─────────┘     │     │   │
+│  │  └─────────────────────────────────────────────────┘     │   │
+│  └────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Creating a WASM Plugin
+
+Let's create a simple math plugin using WAT (WebAssembly Text format):
+
+<Steps>
+  <Step title="Write WASM Module">
+    Create a WAT file with exported functions:
+
+    ```wat examples/wasm_plugin/src/main.rs
+    (module
+        ;; Add two integers
+        (func (export "add") (param i32 i32) (result i32)
+            local.get 0
+            local.get 1
+            i32.add
+        )
+
+        ;; Subtract
+        (func (export "sub") (param i32 i32) (result i32)
+            local.get 0
+            local.get 1
+            i32.sub
+        )
+
+        ;; Multiply
+        (func (export "mul") (param i32 i32) (result i32)
+            local.get 0
+            local.get 1
+            i32.mul
+        )
+
+        ;; Factorial (recursive)
+        (func $factorial (export "factorial") (param i32) (result i32)
+            (if (result i32) (i32.le_s (local.get 0) (i32.const 1))
+                (then (i32.const 1))
+                (else
+                    (i32.mul
+                        (local.get 0)
+                        (call $factorial (i32.sub (local.get 0) (i32.const 1)))
+                    )
+                )
+            )
+        )
+    )
+    ```
+  </Step>
+
+  <Step title="Create Runtime">
+    Initialize the WASM runtime:
+
+    ```rust examples/wasm_plugin/src/main.rs
+    use mofa_plugins::wasm_runtime::{
+        WasmRuntime, RuntimeConfig, WasmPluginConfig
+    };
+
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Create runtime with config
+        let mut rt_config = RuntimeConfig::new();
+        rt_config.execution_config.fuel_metering = false;
+        rt_config.execution_config.epoch_interruption = false;
+
+        let runtime = WasmRuntime::new(rt_config)?;
+
+        Ok(())
+    }
+    ```
+  </Step>
+
+  <Step title="Load Plugin">
+    Compile and load the WASM module:
+
+    ```rust examples/wasm_plugin/src/main.rs
+    // Compile WAT to WASM
+    let wat = r#"
+        (module
+            (func (export "add") (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add
+            )
+        )
+    "#;
+
+    let compiled = runtime.compile_wat("math-module", wat).await?;
+    println!("Compiled module: {}", compiled.name);
+    println!("Size: {} bytes", compiled.size_bytes);
+    println!("Compile time: {}ms", compiled.compile_time_ms);
+
+    // Create plugin from compiled module
+    let mut config = WasmPluginConfig::new("math-plugin");
+    config.resource_limits.max_fuel = None;
+
+    let plugin = runtime.create_plugin(&compiled, config).await?;
+    ```
+  </Step>
+
+  <Step title="Execute Functions">
+    Call exported WASM functions:
+
+    ```rust examples/wasm_plugin/src/main.rs
+    // Initialize plugin
+    plugin.initialize().await?;
+
+    // Call 'add' function
+    let result = plugin.call_i32(
+        "add",
+        &[wasmtime::Val::I32(10), wasmtime::Val::I32(5)]
+    ).await?;
+
+    println!("10 + 5 = {}", result);
+
+    // Call 'factorial' function
+    let result = plugin.call_i32(
+        "factorial",
+        &[wasmtime::Val::I32(5)]
+    ).await?;
+
+    println!("5! = {}", result);
+
+    // Stop plugin
+    plugin.stop().await?;
+    ```
+  </Step>
+</Steps>
+
+## Resource Limits
+
+Configure strict resource limits for safety:
+
+```rust examples/wasm_plugin/src/main.rs
+use mofa_plugins::wasm_runtime::{RuntimeConfig, ResourceLimits};
+
+let rt_config = RuntimeConfig::new()
+    .with_resource_limits(ResourceLimits {
+        max_memory_pages: 16,          // 1MB max memory (64KB per page)
+        max_table_elements: 1000,      // Max table size
+        max_instances: 5,              // Max concurrent instances
+        max_execution_time_ms: 1000,   // 1 second timeout
+        max_fuel: None,                // Disable fuel metering
+        max_call_depth: 100,           // Max recursion depth
+    });
+
+let runtime = WasmRuntime::new(rt_config)?;
+```
+
+<Note>
+Resource limits protect against malicious or poorly written plugins consuming excessive resources.
+</Note>
+
+## Plugin Manager
+
+Manage multiple WASM plugins:
+
+```rust examples/wasm_plugin/src/main.rs
+use mofa_plugins::wasm_runtime::WasmPluginManager;
+use std::sync::Arc;
+
+let runtime = Arc::new(WasmRuntime::new(rt_config)?);
+let manager = WasmPluginManager::new(runtime);
+
+// Subscribe to events
+let mut event_rx = manager.subscribe();
+
+// Load multiple plugins
+let greet_wat = r#"
+    (module
+        (func (export "greet_len") (result i32)
+            i32.const 13  ;; "Hello, World!".len()
+        )
+    )
+"#;
+
+let greet_handle = manager.load_wat(greet_wat, None).await?;
+println!("Loaded plugin: {}", greet_handle.id());
+
+// Initialize and use
+manager.initialize(&greet_handle).await?;
+let len = manager.call_i32(&greet_handle, "greet_len", &[]).await?;
+println!("Greeting length: {}", len);
+
+// List all plugins
+let plugins = manager.list_plugins().await;
+println!("Loaded plugins: {:?}",
+    plugins.iter().map(|h| h.id()).collect::<Vec<_>>());
+
+// Get plugin info
+let info = manager.get_info(&greet_handle).await?;
+println!("State: {:?}", info.state);
+println!("Calls: {}", info.metrics.call_count);
+
+// Get manager stats
+let stats = manager.stats().await;
+println!("Active plugins: {}", stats.active_plugins);
+println!("Total calls: {}", stats.total_calls);
+
+// Cleanup
+manager.unload_all().await?;
+```
+
+## Plugin with Memory
+
+Use linear memory for data storage:
+
+```wat
+(module
+    (memory (export "memory") 1)  ;; 1 page = 64KB
+
+    (func (export "get_memory_size") (result i32)
+        memory.size
+    )
+
+    (func (export "write_byte") (param i32 i32)
+        local.get 0  ;; address
+        local.get 1  ;; value
+        i32.store8
+    )
+
+    (func (export "read_byte") (param i32) (result i32)
+        local.get 0  ;; address
+        i32.load8_u
+    )
+)
+```
+
+Use from Rust:
+
+```rust examples/wasm_plugin/src/main.rs
+// Check memory size
+let size = plugin.call_i32("get_memory_size", &[]).await?;
+println!("Memory size: {} page(s) ({}KB)", size, size * 64);
+
+// Write data
+plugin.call_void(
+    "write_byte",
+    &[wasmtime::Val::I32(0), wasmtime::Val::I32(42)]
+).await?;
+
+// Read data
+let value = plugin.call_i32("read_byte", &[wasmtime::Val::I32(0)]).await?;
+println!("Read value: {}", value);
+```
+
+## Plugin Capabilities
+
+Control plugin permissions:
+
+```rust
+use mofa_plugins::wasm_runtime::PluginCapability;
+
+let config = WasmPluginConfig::new("secure-plugin")
+    .with_capability(PluginCapability::ReadConfig)
+    .with_capability(PluginCapability::WriteState)
+    .with_capability(PluginCapability::CallHostFunction);
+
+// Without NetworkAccess capability, network calls will fail
+let plugin = runtime.create_plugin_from_wat(wat, config).await?;
+```
+
+## Plugin Metrics
+
+Monitor plugin performance:
+
+```rust
+// Execute multiple times
+for i in 1..=5 {
+    plugin.call_i32("factorial", &[wasmtime::Val::I32(i)]).await?;
+}
+
+// Get metrics
+let metrics = plugin.metrics().await;
+println!("Total calls: {}", metrics.call_count);
+println!("Success count: {}", metrics.success_count);
+println!("Failed count: {}", metrics.failure_count);
+println!("Avg execution time: {}ns", metrics.avg_execution_time_ns);
+println!("Total execution time: {}ns", metrics.total_execution_time_ns);
+```
+
+## Compiling Rust to WASM
+
+Build plugins in Rust:
+
+```rust
+// lib.rs
+#[no_mangle]
+pub extern "C" fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+#[no_mangle]
+pub extern "C" fn process_data(ptr: *const u8, len: usize) -> i32 {
+    let data = unsafe {
+        std::slice::from_raw_parts(ptr, len)
+    };
+
+    // Process data
+    data.len() as i32
+}
+```
+
+Compile:
+
+```bash
+# Add WASM target
+rustup target add wasm32-unknown-unknown
+
+# Compile
+cargo build --target wasm32-unknown-unknown --release
+
+# Output: target/wasm32-unknown-unknown/release/my_plugin.wasm
+```
+
+Load in MoFA:
+
+```rust
+use std::fs;
+
+let wasm_bytes = fs::read("my_plugin.wasm")?;
+let compiled = runtime.compile("my_plugin", &wasm_bytes).await?;
+let plugin = runtime.create_plugin(&compiled, config).await?;
+```
+
+## Advanced Features
+
+### Global Variables
+
+```wat
+(module
+    (global $counter (mut i32) (i32.const 0))
+
+    (func (export "increment") (result i32)
+        global.get $counter
+        i32.const 1
+        i32.add
+        global.set $counter
+        global.get $counter
+    )
+
+    (func (export "get") (result i32)
+        global.get $counter
+    )
+
+    (func (export "reset")
+        i32.const 0
+        global.set $counter
+    )
+)
+```
+
+### Tables and Indirect Calls
+
+```wat
+(module
+    (table 2 funcref)
+    (elem (i32.const 0) $add $mul)
+
+    (func $add (param i32 i32) (result i32)
+        local.get 0
+        local.get 1
+        i32.add
+    )
+
+    (func $mul (param i32 i32) (result i32)
+        local.get 0
+        local.get 1
+        i32.mul
+    )
+
+    (func (export "call_indirect") (param i32 i32 i32) (result i32)
+        local.get 1
+        local.get 2
+        local.get 0
+        call_indirect (param i32 i32) (result i32)
+    )
+)
+```
+
+### Module Linking
+
+```rust
+// Import host functions
+let mut linker = runtime.create_linker();
+
+linker.func_wrap(
+    "env",
+    "log",
+    |msg: i32| {
+        println!("Plugin log: {}", msg);
+    }
+)?;
+
+let plugin = runtime.create_plugin_with_linker(
+    &compiled,
+    config,
+    linker
+).await?;
+```
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always set resource limits">
+    Prevent resource exhaustion with strict limits on memory, time, and call depth.
+  </Accordion>
+
+  <Accordion title="Use capability-based permissions">
+    Only grant necessary capabilities to plugins.
+  </Accordion>
+
+  <Accordion title="Validate all inputs">
+    Never trust data coming from WASM plugins.
+  </Accordion>
+
+  <Accordion title="Monitor execution metrics">
+    Track plugin performance and detect anomalies.
+  </Accordion>
+
+  <Accordion title="Isolate plugin instances">
+    Each plugin should run in its own instance for complete isolation.
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+```rust
+use mofa_plugins::wasm_runtime::WasmError;
+
+match plugin.call_i32("factorial", &[wasmtime::Val::I32(10)]).await {
+    Ok(result) => println!("Result: {}", result),
+    Err(WasmError::Timeout) => {
+        eprintln!("Plugin execution timed out");
+    }
+    Err(WasmError::OutOfMemory) => {
+        eprintln!("Plugin ran out of memory");
+    }
+    Err(WasmError::InvalidFunction(name)) => {
+        eprintln!("Function not found: {}", name);
+    }
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+## Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Pre-compile Modules" icon="bolt">
+    Compile modules once and reuse for multiple instances
+  </Card>
+  <Card title="Module Caching" icon="database">
+    Enable module caching to avoid repeated compilation
+  </Card>
+  <Card title="Disable Fuel Metering" icon="gauge">
+    For trusted code, disable fuel metering for better performance
+  </Card>
+  <Card title="Optimize WASM" icon="rocket">
+    Use `wasm-opt` to optimize WASM binaries before deployment
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Plugin Overview" icon="puzzle-piece" href="/plugins/overview">
+    Learn about the full plugin system
+  </Card>
+  <Card title="Compile-time Plugins" icon="rust" href="/plugins/compile-time-plugins">
+    Build native Rust plugins
+  </Card>
+</CardGroup>

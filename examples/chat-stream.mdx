@@ -1,0 +1,364 @@
+---
+title: "Chat Stream Example"
+description: "Learn how to build streaming chat agents with LLM integration"
+---
+
+## Overview
+
+This example demonstrates how to create an LLM-powered chat agent with streaming capabilities. You'll learn how to:
+
+- Create an LLM agent using `OpenAIProvider`
+- Perform simple Q&A without context retention
+- Build multi-turn conversations with context
+- Stream responses in real-time
+- Get both streaming and full responses
+
+## What You'll Learn
+
+- Setting up OpenAI provider from environment
+- Using `LLMAgentBuilder` for agent configuration
+- Difference between `ask()` and `chat()` methods
+- Implementing streaming with `ask_stream()` and `chat_stream()`
+- Handling streaming responses with tokio-stream
+
+## Prerequisites
+
+- Rust 1.75 or higher
+- OpenAI API key (set as `OPENAI_API_KEY` environment variable)
+- Optional: Custom API endpoint (e.g., Ollama) via `OPENAI_BASE_URL`
+
+## Complete Source Code
+
+View the complete example from the MoFA repository:
+
+<CodeGroup>
+```rust main.rs
+use mofa_sdk::llm::{LLMAgentBuilder, OpenAIProvider};
+use tokio_stream::StreamExt;
+use tracing::{info, Level};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .init();
+    info!("========================================");
+    info!("  MoFA LLM Agent                       ");
+    info!("========================================\n");
+
+    // Create OpenAI provider from environment variables
+    let openai_provider = OpenAIProvider::from_env();
+    
+    // Build agent with OpenAI provider
+    let agent = LLMAgentBuilder::new()
+        .with_provider(std::sync::Arc::new(openai_provider))
+        .build();
+    
+    info!("Agent loaded: {}", agent.config().name);
+    info!("Agent ID: {}\n", agent.config().agent_id);
+
+    // Demo: Interactive chat
+    info!("--- Chat Demo ---\n");
+
+    // Simple Q&A (no context retention)
+    let response = agent
+        .ask("Hello! What can you help me with?")
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { 
+            format!("LLM error: {e}").into() 
+        })?;
+    info!("Q: Hello! What can you help me with?");
+    info!("A: {response}\n");
+
+    // Multi-turn conversation (with context retention)
+    info!("--- Multi-turn Conversation ---\n");
+
+    let r1 = agent
+        .chat("My favorite programming language is Rust.")
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { 
+            format!("LLM error: {e}").into() 
+        })?;
+    info!("User: My favorite programming language is Rust.");
+    info!("AI: {r1}\n");
+
+    let r2 = agent
+        .chat("What's my favorite language?")
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { 
+            format!("LLM error: {e}").into() 
+        })?;
+    info!("User: What's my favorite language?");
+    info!("AI: {r2}\n");
+
+    // Streaming Q&A
+    info!("--- Streaming Q&A ---\n");
+    let mut stream = agent.ask_stream("Tell me a story").await?;
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(text) => print!("{text}"),
+            Err(e) => info!("Error: {e}"),
+        }
+    }
+    println!("\n");
+
+    // Streaming multi-turn conversation
+    info!("--- Streaming Chat ---\n");
+    let mut stream = agent.chat_stream("Hello!").await?;
+    while let Some(result) = stream.next().await {
+        if let Ok(text) = result {
+            print!("{text}");
+        }
+    }
+    println!("\n");
+
+    // Streaming with full response
+    info!("--- Streaming with Full Response ---\n");
+    let (mut stream, full_rx) = agent
+        .chat_stream_with_full("What's 2+2?")
+        .await?;
+    
+    while let Some(result) = stream.next().await {
+        if let Ok(text) = result {
+            print!("{text}");
+        }
+    }
+    
+    let full_response = full_rx.await?;
+    info!("\nFull: {full_response}");
+    
+    info!("========================================");
+    info!("  Demo completed!                      ");
+    info!("========================================");
+
+    Ok(())
+}
+```
+
+```toml Cargo.toml
+[package]
+name = "chat_stream"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mofa-sdk = { path = "../../crates/mofa-sdk" }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+```
+</CodeGroup>
+
+## Running the Example
+
+<Steps>
+
+### Set Environment Variables
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+
+# Optional: Use custom endpoint (e.g., Ollama)
+export OPENAI_BASE_URL="http://localhost:11434/v1"
+```
+
+### Run the Example
+```bash
+cd examples/chat_stream
+cargo run
+```
+
+</Steps>
+
+## Expected Output
+
+```
+========================================
+  MoFA LLM Agent
+========================================
+
+Agent loaded: LLM Agent
+Agent ID: llm_agent_001
+
+--- Chat Demo ---
+
+Q: Hello! What can you help me with?
+A: Hello! I'm an AI assistant powered by OpenAI. I can help you with...
+
+--- Multi-turn Conversation ---
+
+User: My favorite programming language is Rust.
+AI: That's great! Rust is known for its memory safety...
+
+User: What's my favorite language?
+AI: Based on what you just told me, your favorite programming language is Rust!
+
+--- Streaming Q&A ---
+
+Once upon a time...
+...
+
+========================================
+  Demo completed!
+========================================
+```
+
+## Key Concepts
+
+### ask() vs chat()
+
+<AccordionGroup>
+  <Accordion title="ask() - Stateless Q&A">
+    The `ask()` method performs stateless queries. Each call is independent with no context retention.
+    
+    ```rust
+    let response = agent.ask("What is Rust?").await?;
+    // Next ask() won't remember this conversation
+    ```
+  </Accordion>
+
+  <Accordion title="chat() - Contextual Conversation">
+    The `chat()` method maintains conversation context across multiple turns.
+    
+    ```rust
+    agent.chat("My name is Alice").await?;
+    let response = agent.chat("What's my name?").await?;
+    // Response: "Your name is Alice"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Streaming Responses
+
+MoFA provides multiple streaming methods:
+
+<Tabs>
+  <Tab title="ask_stream()">
+    Stream responses for stateless queries:
+    ```rust
+    let mut stream = agent.ask_stream("Tell me a story").await?;
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(text) => print!("{text}"),
+            Err(e) => eprintln!("Error: {e}"),
+        }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="chat_stream()">
+    Stream responses with context retention:
+    ```rust
+    let mut stream = agent.chat_stream("Continue the story").await?;
+    while let Some(result) = stream.next().await {
+        if let Ok(text) = result {
+            print!("{text}");
+        }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="chat_stream_with_full()">
+    Stream + get complete response:
+    ```rust
+    let (mut stream, full_rx) = agent
+        .chat_stream_with_full("Calculate 2+2")
+        .await?;
+    
+    // Display streaming
+    while let Some(result) = stream.next().await {
+        if let Ok(text) = result {
+            print!("{text}");
+        }
+    }
+    
+    // Get full response
+    let full = full_rx.await?;
+    println!("\nFull response: {full}");
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration Options
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | Yes | - | Your OpenAI API key |
+| `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | Custom API endpoint |
+| `OPENAI_MODEL` | No | `gpt-4` | Model to use |
+
+### Builder Options
+
+```rust
+let agent = LLMAgentBuilder::new()
+    .with_provider(Arc::new(provider))
+    .with_name("My Agent")
+    .with_system_prompt("You are a helpful assistant")
+    .with_temperature(0.7)
+    .with_max_tokens(2048)
+    .build();
+```
+
+## Common Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Customer Support" icon="headset">
+    Build chatbots with context-aware responses
+  </Card>
+  <Card title="Content Generation" icon="pen-to-square">
+    Stream generated content in real-time
+  </Card>
+  <Card title="Code Assistant" icon="code">
+    Help users with programming questions
+  </Card>
+  <Card title="Data Analysis" icon="chart-line">
+    Query and analyze data conversationally
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="API Key Error">
+    **Error**: `OPENAI_API_KEY not found`
+    
+    **Solution**: Set your API key:
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    ```
+  </Accordion>
+
+  <Accordion title="Connection Timeout">
+    **Error**: `Connection timeout`
+    
+    **Solution**: Check your network or use a proxy:
+    ```bash
+    export HTTPS_PROXY="http://proxy.example.com:8080"
+    ```
+  </Accordion>
+
+  <Accordion title="Rate Limiting">
+    **Error**: `Rate limit exceeded`
+    
+    **Solution**: Implement retry logic or upgrade your API plan
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ReAct Agent" icon="brain" href="/examples/react-agent">
+    Add reasoning and tool use
+  </Card>
+  <Card title="Multi-Agent" icon="users" href="/examples/multi-agent-coordination">
+    Coordinate multiple agents
+  </Card>
+  <Card title="LLM Integration" icon="robot" href="/guides/llm-integration">
+    Deep dive into LLM features
+  </Card>
+  <Card title="Streaming Guide" icon="stream" href="/guides/streaming">
+    Advanced streaming patterns
+  </Card>
+</CardGroup>

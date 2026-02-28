@@ -1,0 +1,767 @@
+---
+title: 'Coordination Protocols API'
+description: 'Complete API reference for multi-agent coordination and collaboration protocols'
+icon: 'network-wired'
+---
+
+## Overview
+
+MoFA provides a comprehensive set of coordination protocols for multi-agent collaboration. All protocols support optional LLM integration for intelligent decision-making and message processing.
+
+## Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│            LLM-Driven Collaboration Architecture            │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐│
+│  │ Task Analysis│────▶│Mode Selection│────▶│Protocol Exec ││
+│  │    (LLM)     │     │    (LLM)     │     │(LLM-Assisted)││
+│  └──────────────┘     └──────────────┘     └──────────────┘│
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Core Types
+
+### CollaborationMode
+
+Defines the communication pattern between agents.
+
+```rust
+pub enum CollaborationMode {
+    RequestResponse,     // One-to-one deterministic tasks
+    PublishSubscribe,    // One-to-many broadcast
+    Consensus,           // Multi-agent agreement
+    Debate,              // Iterative refinement
+    Parallel,            // Concurrent execution
+    Sequential,          // Pipeline processing
+    Custom(String),      // LLM-interpreted custom mode
+}
+```
+
+<Card title="RequestResponse" icon="arrow-right-arrow-left">
+  Synchronous one-to-one communication with explicit return. Best for: data queries, deterministic tasks, simple Q&A.
+</Card>
+
+<Card title="PublishSubscribe" icon="broadcast-tower">
+  Asynchronous one-to-many broadcast. Best for: event propagation, creative generation, notifications.
+</Card>
+
+<Card title="Consensus" icon="handshake">
+  Multi-round negotiation and voting. Best for: decision-making, proposal selection, quality review.
+</Card>
+
+<Card title="Debate" icon="comments">
+  Turn-based discussion with refinement. Best for: code review, solution optimization, dispute resolution.
+</Card>
+
+<Card title="Parallel" icon="layer-group">
+  Simultaneous execution with aggregation. Best for: data analysis, batch processing, distributed search.
+</Card>
+
+<Card title="Sequential" icon="list-ol">
+  Serial execution of dependent tasks. Best for: pipeline processing, phased workflows.
+</Card>
+
+### CollaborationMessage
+
+Message format for agent communication.
+
+```rust
+pub struct CollaborationMessage {
+    pub id: String,
+    pub sender: String,
+    pub receiver: Option<String>,
+    pub topic: Option<String>,
+    pub content: CollaborationContent,
+    pub mode: CollaborationMode,
+    pub timestamp: u64,
+    pub metadata: HashMap<String, String>,
+}
+```
+
+<ParamField path="id" type="String">
+  Unique message identifier (UUID v7)
+</ParamField>
+
+<ParamField path="sender" type="String" required>
+  Sender agent ID
+</ParamField>
+
+<ParamField path="receiver" type="Option<String>">
+  Target agent ID (None for broadcast)
+</ParamField>
+
+<ParamField path="topic" type="Option<String>">
+  Topic for publish-subscribe mode
+</ParamField>
+
+<ParamField path="content" type="CollaborationContent" required>
+  Message content (LLM-understandable)
+</ParamField>
+
+<ParamField path="mode" type="CollaborationMode" required>
+  Collaboration mode
+</ParamField>
+
+<ParamField path="metadata" type="HashMap<String, String>">
+  Additional metadata
+</ParamField>
+
+**Builder Methods:**
+
+```rust
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "Analyze this dataset",
+    CollaborationMode::RequestResponse,
+)
+.with_receiver("agent_002")
+.with_topic("data_analysis")
+.with_metadata("priority".to_string(), "high".to_string());
+```
+
+### CollaborationContent
+
+Message content supporting multiple formats.
+
+```rust
+pub enum CollaborationContent {
+    Text(String),
+    Data(serde_json::Value),
+    Mixed { text: String, data: serde_json::Value },
+    LLMResponse {
+        reasoning: String,
+        conclusion: String,
+        data: serde_json::Value,
+    },
+}
+```
+
+<ResponseField name="Text">
+  Plain natural language text
+  
+  ```rust
+  CollaborationContent::Text("Process this data".to_string())
+  ```
+</ResponseField>
+
+<ResponseField name="Data">
+  Structured JSON data
+  
+  ```rust
+  CollaborationContent::Data(serde_json::json!({
+      "dataset": "sales_2024.csv",
+      "operation": "analyze"
+  }))
+  ```
+</ResponseField>
+
+<ResponseField name="Mixed">
+  Combined text and data
+  
+  ```rust
+  CollaborationContent::Mixed {
+      text: "Analyze sales data".to_string(),
+      data: serde_json::json!({"year": 2024}),
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="LLMResponse">
+  LLM-generated response with reasoning
+  
+  ```rust
+  CollaborationContent::LLMResponse {
+      reasoning: "Analysis shows...".to_string(),
+      conclusion: "Recommendation: ...".to_string(),
+      data: serde_json::json!({"confidence": 0.95}),
+  }
+  ```
+</ResponseField>
+
+### CollaborationResult
+
+Execution result with LLM decision context.
+
+```rust
+pub struct CollaborationResult {
+    pub success: bool,
+    pub data: Option<CollaborationContent>,
+    pub error: Option<String>,
+    pub duration_ms: u64,
+    pub participants: Vec<String>,
+    pub mode: CollaborationMode,
+    pub decision_context: Option<DecisionContext>,
+}
+```
+
+<ResponseField name="success" type="bool">
+  Whether execution succeeded
+</ResponseField>
+
+<ResponseField name="data" type="Option<CollaborationContent>">
+  Result data
+</ResponseField>
+
+<ResponseField name="error" type="Option<String>">
+  Error message if failed
+</ResponseField>
+
+<ResponseField name="duration_ms" type="u64">
+  Execution time in milliseconds
+</ResponseField>
+
+<ResponseField name="participants" type="Vec<String>">
+  IDs of participating agents
+</ResponseField>
+
+<ResponseField name="mode" type="CollaborationMode">
+  Mode used for execution
+</ResponseField>
+
+<ResponseField name="decision_context" type="Option<DecisionContext>">
+  LLM's decision information
+</ResponseField>
+
+### DecisionContext
+
+Records LLM's reasoning for protocol selection.
+
+```rust
+pub struct DecisionContext {
+    pub reasoning: String,
+    pub task_analysis: String,
+    pub alternatives: Vec<CollaborationMode>,
+    pub confidence: f32,
+}
+```
+
+<ResponseField name="reasoning" type="String">
+  Why LLM chose this mode
+</ResponseField>
+
+<ResponseField name="task_analysis" type="String">
+  LLM's analysis of the task
+</ResponseField>
+
+<ResponseField name="alternatives" type="Vec<CollaborationMode>">
+  Other modes LLM considered
+</ResponseField>
+
+<ResponseField name="confidence" type="f32">
+  Confidence level (0.0 - 1.0)
+</ResponseField>
+
+## Protocol Trait
+
+### CollaborationProtocol
+
+Core trait all protocols must implement.
+
+```rust
+#[async_trait]
+pub trait CollaborationProtocol: Send + Sync {
+    fn name(&self) -> &str;
+    fn mode(&self) -> CollaborationMode;
+    fn description(&self) -> &str;
+    fn applicable_scenarios(&self) -> Vec<String>;
+    
+    async fn send_message(&self, msg: CollaborationMessage) -> GlobalResult<()>;
+    async fn receive_message(&self) -> GlobalResult<Option<CollaborationMessage>>;
+    async fn process_message(
+        &self,
+        msg: CollaborationMessage,
+    ) -> GlobalResult<CollaborationResult>;
+    
+    fn is_available(&self) -> bool { true }
+    fn stats(&self) -> HashMap<String, serde_json::Value> { HashMap::new() }
+}
+```
+
+<ParamField path="name" type="fn() -> &str" required>
+  Protocol identifier
+</ParamField>
+
+<ParamField path="mode" type="fn() -> CollaborationMode" required>
+  Collaboration mode
+</ParamField>
+
+<ParamField path="description" type="fn() -> &str">
+  Human/LLM-readable description
+</ParamField>
+
+<ParamField path="applicable_scenarios" type="fn() -> Vec<String>">
+  Use cases for LLM to consider
+</ParamField>
+
+<ParamField path="send_message" type="async fn" required>
+  Send collaboration message
+</ParamField>
+
+<ParamField path="receive_message" type="async fn" required>
+  Receive collaboration message
+</ParamField>
+
+<ParamField path="process_message" type="async fn" required>
+  Process message and return result
+</ParamField>
+
+## Protocol Implementations
+
+### RequestResponseProtocol
+
+One-to-one synchronous communication.
+
+```rust
+// Without LLM
+let protocol = RequestResponseProtocol::new("agent_001");
+
+// With LLM
+let protocol = RequestResponseProtocol::with_llm(
+    "agent_001",
+    llm_client.clone(),
+);
+
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "Query user data",
+    CollaborationMode::RequestResponse,
+).with_receiver("agent_002");
+
+let result = protocol.process_message(msg).await?;
+```
+
+**Use Cases:**
+- Data queries and retrieval
+- Deterministic task execution
+- Status requests
+- Simple question-answering
+
+### PublishSubscribeProtocol
+
+One-to-many asynchronous broadcast.
+
+```rust
+let protocol = PublishSubscribeProtocol::with_llm(
+    "agent_001",
+    llm_client.clone(),
+);
+
+// Subscribe to topics
+protocol.subscribe("events".to_string()).await?;
+protocol.subscribe("alerts".to_string()).await?;
+
+// Publish message
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "System update available",
+    CollaborationMode::PublishSubscribe,
+).with_topic("events");
+
+protocol.send_message(msg).await?;
+```
+
+**Use Cases:**
+- Event propagation
+- Creative brainstorming
+- Notification broadcasting
+- Multi-party collaboration
+
+### ConsensusProtocol
+
+Multi-agent agreement through negotiation.
+
+```rust
+let protocol = ConsensusProtocol::with_llm(
+    "agent_001",
+    llm_client.clone(),
+);
+
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "Approve this design proposal",
+    CollaborationMode::Consensus,
+);
+
+let result = protocol.process_message(msg).await?;
+```
+
+**Use Cases:**
+- Decision-making
+- Voting and evaluation
+- Proposal selection
+- Quality review
+
+### DebateProtocol
+
+Iterative refinement through discussion.
+
+```rust
+let protocol = DebateProtocol::with_llm(
+    "agent_001",
+    llm_client.clone(),
+);
+
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "Review this code implementation",
+    CollaborationMode::Debate,
+);
+
+let result = protocol.process_message(msg).await?;
+```
+
+**Use Cases:**
+- Code review
+- Solution optimization
+- Dispute resolution
+- Quality improvement
+
+### ParallelProtocol
+
+Concurrent task execution.
+
+```rust
+let protocol = ParallelProtocol::with_llm(
+    "agent_001",
+    llm_client.clone(),
+);
+
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "Analyze multiple datasets",
+    CollaborationMode::Parallel,
+);
+
+let result = protocol.process_message(msg).await?;
+```
+
+**Use Cases:**
+- Data analysis
+- Batch processing
+- Distributed search
+- Parallel computation
+
+### SequentialProtocol
+
+Serial execution of dependent tasks.
+
+```rust
+let protocol = SequentialProtocol::with_llm(
+    "agent_001",
+    llm_client.clone(),
+);
+
+let msg = CollaborationMessage::new(
+    "agent_001",
+    "Process pipeline stages",
+    CollaborationMode::Sequential,
+);
+
+let result = protocol.process_message(msg).await?;
+```
+
+**Use Cases:**
+- Pipeline processing
+- Dependent task chains
+- Step-by-step execution
+- Phased workflows
+
+## Collaboration Manager
+
+### LLMDrivenCollaborationManager
+
+Manages protocol selection and execution.
+
+```rust
+let manager = LLMDrivenCollaborationManager::new("agent_001");
+
+// Register protocols
+manager.register_protocol(Arc::new(
+    RequestResponseProtocol::with_llm("agent_001", llm_client.clone())
+)).await?;
+
+manager.register_protocol(Arc::new(
+    ParallelProtocol::with_llm("agent_001", llm_client.clone())
+)).await?;
+
+// Execute with specific protocol
+let result = manager.execute_task_with_protocol(
+    "request_response",
+    "Process data query",
+).await?;
+```
+
+<ResponseField name="new" type="fn">
+  Create new manager
+  
+  ```rust
+  pub fn new(agent_id: impl Into<String>) -> Self
+  ```
+</ResponseField>
+
+<ResponseField name="register_protocol" type="async fn">
+  Register a protocol
+  
+  ```rust
+  pub async fn register_protocol(
+      &self,
+      protocol: Arc<dyn CollaborationProtocol>,
+  ) -> GlobalResult<()>
+  ```
+</ResponseField>
+
+<ResponseField name="execute_task_with_protocol" type="async fn">
+  Execute task using specific protocol
+  
+  ```rust
+  pub async fn execute_task_with_protocol(
+      &self,
+      protocol_name: &str,
+      content: impl Into<CollaborationContent>,
+  ) -> GlobalResult<CollaborationResult>
+  ```
+</ResponseField>
+
+<ResponseField name="send_message" type="async fn">
+  Send collaboration message
+  
+  ```rust
+  pub async fn send_message(
+      &self,
+      msg: CollaborationMessage,
+  ) -> GlobalResult<()>
+  ```
+</ResponseField>
+
+<ResponseField name="receive_message" type="async fn">
+  Receive collaboration message
+  
+  ```rust
+  pub async fn receive_message(
+      &self
+  ) -> GlobalResult<Option<CollaborationMessage>>
+  ```
+</ResponseField>
+
+<ResponseField name="stats" type="async fn">
+  Get collaboration statistics
+  
+  ```rust
+  pub async fn stats(&self) -> CollaborationStats
+  ```
+</ResponseField>
+
+## Protocol Registry
+
+### ProtocolRegistry
+
+Registry for managing available protocols.
+
+```rust
+let registry = ProtocolRegistry::new();
+
+// Register protocol
+registry.register(Arc::new(protocol)).await?;
+
+// Query protocols
+let protocol = registry.get("request_response").await;
+let all_protocols = registry.list_all().await;
+let names = registry.list_names().await;
+let descriptions = registry.get_descriptions().await;
+```
+
+<ResponseField name="register" type="async fn">
+  Register protocol
+  
+  ```rust
+  pub async fn register(
+      &self,
+      protocol: Arc<dyn CollaborationProtocol>,
+  ) -> GlobalResult<()>
+  ```
+</ResponseField>
+
+<ResponseField name="get" type="async fn">
+  Get protocol by name
+  
+  ```rust
+  pub async fn get(
+      &self,
+      name: &str,
+  ) -> Option<Arc<dyn CollaborationProtocol>>
+  ```
+</ResponseField>
+
+<ResponseField name="get_descriptions" type="async fn">
+  Get all protocol descriptions for LLM
+  
+  ```rust
+  pub async fn get_descriptions(
+      &self
+  ) -> HashMap<String, ProtocolDescription>
+  ```
+</ResponseField>
+
+## Statistics
+
+### CollaborationStats
+
+Aggregated collaboration metrics.
+
+```rust
+pub struct CollaborationStats {
+    pub total_tasks: u64,
+    pub successful_tasks: u64,
+    pub failed_tasks: u64,
+    pub mode_usage: HashMap<String, u64>,
+    pub avg_duration_ms: f64,
+    pub llm_decisions: LLMDecisionStats,
+}
+```
+
+<ResponseField name="total_tasks" type="u64">
+  Total tasks executed
+</ResponseField>
+
+<ResponseField name="successful_tasks" type="u64">
+  Successfully completed tasks
+</ResponseField>
+
+<ResponseField name="failed_tasks" type="u64">
+  Failed tasks
+</ResponseField>
+
+<ResponseField name="mode_usage" type="HashMap<String, u64>">
+  Usage count per collaboration mode
+</ResponseField>
+
+<ResponseField name="avg_duration_ms" type="f64">
+  Average execution time
+</ResponseField>
+
+<ResponseField name="llm_decisions" type="LLMDecisionStats">
+  LLM decision statistics
+</ResponseField>
+
+### LLMDecisionStats
+
+LLM-specific decision metrics.
+
+```rust
+pub struct LLMDecisionStats {
+    pub total_decisions: u64,
+    pub mode_selections: HashMap<String, u64>,
+    pub avg_confidence: f32,
+}
+```
+
+## Complete Example
+
+```rust
+use mofa_foundation::collaboration::*;
+use mofa_foundation::llm::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> GlobalResult<()> {
+    // Create LLM client
+    let provider = Arc::new(create_openai_provider());
+    let llm_client = Arc::new(LLMClient::new(provider));
+    
+    // Create manager
+    let manager = LLMDrivenCollaborationManager::new("agent_001");
+    
+    // Register protocols with LLM
+    manager.register_protocol(Arc::new(
+        RequestResponseProtocol::with_llm(
+            "agent_001",
+            llm_client.clone(),
+        )
+    )).await?;
+    
+    manager.register_protocol(Arc::new(
+        ParallelProtocol::with_llm(
+            "agent_001",
+            llm_client.clone(),
+        )
+    )).await?;
+    
+    manager.register_protocol(Arc::new(
+        ConsensusProtocol::with_llm(
+            "agent_001",
+            llm_client.clone(),
+        )
+    )).await?;
+    
+    // Execute task with specific protocol
+    let result = manager.execute_task_with_protocol(
+        "request_response",
+        CollaborationContent::Mixed {
+            text: "Analyze sales data".to_string(),
+            data: serde_json::json!({
+                "year": 2024,
+                "quarter": "Q1"
+            }),
+        },
+    ).await?;
+    
+    if result.success {
+        println!("Success! Duration: {}ms", result.duration_ms);
+        if let Some(data) = result.data {
+            println!("Result: {}", data.to_text());
+        }
+        
+        // Check LLM decision context
+        if let Some(ctx) = result.decision_context {
+            println!("LLM reasoning: {}", ctx.reasoning);
+            println!("Confidence: {}", ctx.confidence);
+        }
+    }
+    
+    // Get statistics
+    let stats = manager.stats().await;
+    println!("Total tasks: {}", stats.total_tasks);
+    println!("Success rate: {:.1}%", 
+        (stats.successful_tasks as f64 / stats.total_tasks as f64) * 100.0
+    );
+    
+    Ok(())
+}
+```
+
+## LLM Integration Helper
+
+### LLMProtocolHelper
+
+Helper for integrating LLM with protocols.
+
+```rust
+let helper = LLMProtocolHelper::new("agent_001")
+    .with_llm(llm_client.clone())
+    .with_use_llm(true);
+
+let content = helper.process_with_llm(
+    &msg,
+    "You are a collaboration agent. Process this message.",
+).await?;
+```
+
+## Mode Selection Guide
+
+Use this guide to select appropriate modes:
+
+| Task Type | Recommended Mode | Reason |
+|-----------|-----------------|--------|
+| Data Query | RequestResponse | Deterministic, needs explicit answer |
+| Brainstorming | PublishSubscribe | Multiple perspectives needed |
+| Approval | Consensus | Agreement required |
+| Code Review | Debate | Iterative refinement |
+| Analysis | Parallel | Independent sub-tasks |
+| Pipeline | Sequential | Dependencies between steps |
+
+## Source Reference
+
+- Protocol implementations: `~/workspace/source/crates/mofa-foundation/src/collaboration/mod.rs`
+- Type definitions: `~/workspace/source/crates/mofa-foundation/src/collaboration/types.rs`

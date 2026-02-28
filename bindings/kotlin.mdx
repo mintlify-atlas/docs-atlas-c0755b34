@@ -1,0 +1,857 @@
+---
+title: 'Kotlin Bindings'
+description: 'Native Kotlin bindings for MoFA with coroutine support'
+---
+
+## Overview
+
+MoFA provides native Kotlin bindings generated through Mozilla UniFFI. These bindings offer idiomatic Kotlin APIs with coroutine support, null safety, and seamless interoperability with Java.
+
+## Installation
+
+<Tabs>
+  <Tab title="Gradle (Kotlin DSL)">
+    ```kotlin
+    dependencies {
+        implementation("org.mofa:mofa-sdk:0.1.0")
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Gradle (Groovy)">
+    ```groovy
+    dependencies {
+        implementation 'org.mofa:mofa-sdk:0.1.0'
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Maven">
+    ```xml
+    <dependencies>
+        <dependency>
+            <groupId>org.mofa</groupId>
+            <artifactId>mofa-sdk</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+    </dependencies>
+    ```
+  </Tab>
+  
+  <Tab title="From Source">
+    ```bash
+    # Install UniFFI bindgen for Kotlin
+    cargo install uniffi-bindgen-java
+    
+    # Build FFI library
+    cd mofa
+    cargo build --release --features uniffi -p mofa-ffi
+    
+    # Generate Kotlin bindings
+    cd crates/mofa-ffi
+    ./generate-bindings.sh kotlin
+    
+    # Build with Gradle
+    cd bindings/kotlin
+    ./gradlew build
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+### Basic LLM Agent
+
+```kotlin
+import org.mofa.*
+
+fun main() {
+    // Set your API key
+    val apiKey = System.getenv("OPENAI_API_KEY")
+        ?: error("OPENAI_API_KEY not set")
+    
+    // Create an agent using the builder pattern
+    val builder = UniFFI.INSTANCE.newLlmAgentBuilder()
+        .setId("my-agent")
+        .setName("Kotlin Agent")
+        .setSystemPrompt("You are a helpful assistant.")
+        .setTemperature(0.7f)
+        .setMaxTokens(1000)
+        .setOpenaiProvider(
+            apiKey,
+            System.getenv("OPENAI_BASE_URL"),
+            "gpt-3.5-turbo"
+        )
+    
+    val agent = builder.build()
+    
+    // Simple Q&A (no context retention)
+    val answer = agent.ask("What is Kotlin?")
+    println("Answer: $answer")
+    
+    // Multi-turn chat (with context)
+    agent.chat("My favorite language is Kotlin.")
+    val response = agent.chat("What did I just tell you?")
+    println("Response: $response")
+    
+    // Get conversation history
+    val history = agent.getHistory()
+    println("Total messages: ${history.size}")
+    
+    // Clear history
+    agent.clearHistory()
+}
+```
+
+## API Reference
+
+### UniFFI Namespace
+
+<ParamField path="UniFFI.INSTANCE.getVersion" type="(): String">
+  Get the MoFA SDK version string.
+</ParamField>
+
+<ParamField path="UniFFI.INSTANCE.isDoraAvailable" type="(): Boolean">
+  Check if Dora-rs distributed runtime is available.
+</ParamField>
+
+<ParamField path="UniFFI.INSTANCE.newLlmAgentBuilder" type="(): LLMAgentBuilder">
+  Create a new LLM agent builder.
+</ParamField>
+
+### LLMAgentBuilder
+
+<ParamField path="setId" type="(id: String): LLMAgentBuilder">
+  Set the agent ID. If not set, a UUID will be generated.
+</ParamField>
+
+<ParamField path="setName" type="(name: String): LLMAgentBuilder">
+  Set the agent name for display purposes.
+</ParamField>
+
+<ParamField path="setSystemPrompt" type="(prompt: String): LLMAgentBuilder">
+  Set the system prompt that defines agent behavior.
+</ParamField>
+
+<ParamField path="setTemperature" type="(temp: Float): LLMAgentBuilder">
+  Set the LLM temperature (0.0 to 1.0). Higher values produce more random outputs.
+</ParamField>
+
+<ParamField path="setMaxTokens" type="(tokens: Int): LLMAgentBuilder">
+  Set the maximum number of tokens to generate.
+</ParamField>
+
+<ParamField path="setSessionId" type="(id: String): LLMAgentBuilder">
+  Set the initial session ID for conversation tracking.
+</ParamField>
+
+<ParamField path="setUserId" type="(id: String): LLMAgentBuilder">
+  Set the user ID for multi-tenant scenarios.
+</ParamField>
+
+<ParamField path="setTenantId" type="(id: String): LLMAgentBuilder">
+  Set the tenant ID for multi-tenant isolation.
+</ParamField>
+
+<ParamField path="setContextWindowSize" type="(size: Int): LLMAgentBuilder">
+  Set the sliding context window size (in conversation rounds).
+</ParamField>
+
+<ParamField path="setOpenaiProvider" type="(apiKey: String, baseUrl: String?, model: String?): LLMAgentBuilder">
+  Configure the OpenAI provider. `baseUrl` and `model` are nullable for defaults.
+</ParamField>
+
+<ParamField path="build" type="(): LLMAgent" required>
+  Build the agent. Throws `MoFaError` if configuration is invalid.
+</ParamField>
+
+### LLMAgent
+
+<ParamField path="agentId" type="(): String">
+  Get the agent ID.
+</ParamField>
+
+<ParamField path="name" type="(): String">
+  Get the agent name.
+</ParamField>
+
+<ParamField path="ask" type="(question: String): String">
+  Simple Q&A without context retention. Each call is independent.
+</ParamField>
+
+<ParamField path="chat" type="(message: String): String">
+  Multi-turn chat with context retention. Maintains conversation history.
+</ParamField>
+
+<ParamField path="clearHistory" type="(): Unit">
+  Clear the conversation history.
+</ParamField>
+
+<ParamField path="getHistory" type="(): List<ChatMessage>">
+  Get the full conversation history as a list of messages.
+</ParamField>
+
+<ParamField path="getLastOutput" type="(): AgentOutputInfo">
+  Get structured output from the last execution (tools used, token usage, etc.).
+</ParamField>
+
+## Examples
+
+### Example 1: Idiomatic Kotlin with Extension Functions
+
+```kotlin
+import org.mofa.*
+
+// Extension function for builder pattern
+fun LLMAgentBuilder.configure(
+    id: String,
+    name: String,
+    systemPrompt: String = "You are a helpful assistant.",
+    temperature: Float = 0.7f,
+    maxTokens: Int = 1000
+): LLMAgentBuilder = this
+    .setId(id)
+    .setName(name)
+    .setSystemPrompt(systemPrompt)
+    .setTemperature(temperature)
+    .setMaxTokens(maxTokens)
+
+// Extension function for chat with DSL
+fun LLMAgent.conversation(block: ConversationScope.() -> Unit) {
+    val scope = ConversationScope(this)
+    scope.block()
+}
+
+class ConversationScope(private val agent: LLMAgent) {
+    infix fun String.ask(agent: LLMAgent): String = agent.chat(this)
+    
+    fun user(message: String): String {
+        return agent.chat(message)
+    }
+}
+
+fun main() {
+    val apiKey = System.getenv("OPENAI_API_KEY") ?: error("API key not set")
+    
+    val agent = UniFFI.INSTANCE.newLlmAgentBuilder()
+        .configure(
+            id = "kotlin-agent",
+            name = "Kotlin Assistant",
+            systemPrompt = "You are a Kotlin expert."
+        )
+        .setOpenaiProvider(apiKey, null, "gpt-4")
+        .build()
+    
+    // Use conversation DSL
+    agent.conversation {
+        println(user("What is Kotlin?"))
+        println(user("Why should I use it?"))
+    }
+}
+```
+
+### Example 2: Coroutine Support
+
+```kotlin
+import kotlinx.coroutines.*
+import org.mofa.*
+
+suspend fun LLMAgent.askAsync(question: String): String = withContext(Dispatchers.IO) {
+    ask(question)
+}
+
+suspend fun LLMAgent.chatAsync(message: String): String = withContext(Dispatchers.IO) {
+    chat(message)
+}
+
+fun main() = runBlocking {
+    val apiKey = System.getenv("OPENAI_API_KEY") ?: error("API key not set")
+    
+    val agent = UniFFI.INSTANCE.newLlmAgentBuilder()
+        .setName("Async Agent")
+        .setOpenaiProvider(apiKey, null, "gpt-3.5-turbo")
+        .build()
+    
+    // Launch multiple concurrent queries
+    val deferreds = listOf(
+        async { agent.askAsync("What is Kotlin?") },
+        async { agent.askAsync("What is Rust?") },
+        async { agent.askAsync("What is Java?") }
+    )
+    
+    // Await all results
+    val results = deferreds.awaitAll()
+    results.forEachIndexed { i, result ->
+        println("Result $i: ${result.take(100)}...")
+    }
+}
+```
+
+### Example 3: Multi-Provider Support
+
+<CodeGroup>
+
+```kotlin OpenAI
+import org.mofa.*
+
+fun createOpenAIAgent(): LLMAgent {
+    val apiKey = System.getenv("OPENAI_API_KEY") ?: error("API key not set")
+    
+    return UniFFI.INSTANCE.newLlmAgentBuilder()
+        .setName("OpenAI Agent")
+        .setOpenaiProvider(apiKey, null, "gpt-4")
+        .build()
+}
+
+fun main() {
+    val agent = createOpenAIAgent()
+    val response = agent.ask("What is Kotlin?")
+    println(response)
+}
+```
+
+```kotlin Azure OpenAI
+import org.mofa.*
+
+fun createAzureAgent(): LLMAgent {
+    val config = LLMConfig(
+        provider = LLMProviderType.AZURE,
+        model = "gpt-4",
+        apiKey = System.getenv("AZURE_API_KEY"),
+        baseUrl = "https://your-resource.openai.azure.com",
+        deployment = "gpt-4-deployment",
+        temperature = 0.7f,
+        maxTokens = 1000,
+        systemPrompt = "You are a helpful assistant."
+    )
+    
+    return LLMAgent.fromConfig(config, "azure-agent", "Azure Agent")
+}
+```
+
+```kotlin Ollama (Local)
+import org.mofa.*
+
+fun createOllamaAgent(): LLMAgent {
+    val config = LLMConfig(
+        provider = LLMProviderType.OLLAMA,
+        model = "llama2",
+        apiKey = null,
+        baseUrl = "http://localhost:11434",
+        deployment = null,
+        temperature = 0.7f,
+        maxTokens = 500,
+        systemPrompt = "You are a helpful assistant."
+    )
+    
+    return LLMAgent.fromConfig(config, "ollama-agent", "Ollama Agent")
+}
+
+fun main() {
+    val agent = createOllamaAgent()
+    val response = agent.chat("Tell me a joke about Kotlin.")
+    println(response)
+}
+```
+
+</CodeGroup>
+
+### Example 4: Session Management
+
+```kotlin
+import org.mofa.*
+
+fun main() {
+    // Create in-memory session manager
+    val manager = SessionManager.newInMemory()
+    
+    // Get or create a session
+    val session = manager.getOrCreate("user-123")
+    
+    // Add messages
+    session.addMessage("user", "Hello!")
+    session.addMessage("assistant", "Hi there! How can I help?")
+    session.addMessage("user", "What's the weather like?")
+    
+    // Retrieve history with destructuring
+    val history = session.getHistory(10)
+    history.forEach { (role, content, timestamp) ->
+        println("[$timestamp] $role: $content")
+    }
+    
+    // Store metadata using JSON
+    session.setMetadata("user_name", "\"Alice\"")
+    session.setMetadata("preferences", """{"theme": "dark"}""")
+    
+    // Retrieve metadata
+    val userName = session.getMetadata("user_name")
+    println("User name: $userName")
+    
+    // Save session
+    manager.saveSession(session)
+    
+    // List all sessions
+    val allSessions = manager.listSessions()
+    println("Total sessions: ${allSessions.size}")
+    
+    // Delete session
+    val deleted = manager.deleteSession("user-123")
+    println("Session deleted: $deleted")
+}
+```
+
+### Example 5: Custom Tool with Sealed Classes
+
+```kotlin
+import org.mofa.*
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+
+// Define tool result as sealed class
+sealed class ToolResult {
+    data class Success(val result: Double) : ToolResult()
+    data class Error(val message: String) : ToolResult()
+}
+
+// Calculator tool with sealed class operations
+class CalculatorTool : FfiToolCallback {
+    sealed class Operation {
+        data class Add(val a: Double, val b: Double) : Operation()
+        data class Subtract(val a: Double, val b: Double) : Operation()
+        data class Multiply(val a: Double, val b: Double) : Operation()
+        data class Divide(val a: Double, val b: Double) : Operation()
+    }
+    
+    override fun name(): String = "calculator"
+    
+    override fun description(): String = "Perform basic arithmetic operations"
+    
+    override fun parametersSchemaJson(): String = """
+        {
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": ["add", "subtract", "multiply", "divide"]
+                },
+                "a": {"type": "number"},
+                "b": {"type": "number"}
+            },
+            "required": ["operation", "a", "b"]
+        }
+    """.trimIndent()
+    
+    override fun execute(argumentsJson: String): FfiToolResult {
+        return try {
+            val json = Json.parseToJsonElement(argumentsJson).jsonObject
+            val op = json["operation"]?.jsonPrimitive?.content ?: error("Missing operation")
+            val a = json["a"]?.jsonPrimitive?.double ?: error("Missing a")
+            val b = json["b"]?.jsonPrimitive?.double ?: error("Missing b")
+            
+            val result = when (op) {
+                "add" -> a + b
+                "subtract" -> a - b
+                "multiply" -> a * b
+                "divide" -> {
+                    if (b == 0.0) {
+                        return FfiToolResult(
+                            success = false,
+                            outputJson = "null",
+                            error = "Division by zero"
+                        )
+                    }
+                    a / b
+                }
+                else -> return FfiToolResult(
+                    success = false,
+                    outputJson = "null",
+                    error = "Unknown operation: $op"
+                )
+            }
+            
+            FfiToolResult(
+                success = true,
+                outputJson = Json.encodeToString(mapOf("result" to result)),
+                error = null
+            )
+        } catch (e: Exception) {
+            FfiToolResult(
+                success = false,
+                outputJson = "null",
+                error = e.message
+            )
+        }
+    }
+}
+
+fun main() {
+    // Create registry and register tool
+    val registry = ToolRegistry()
+    registry.registerTool(CalculatorTool())
+    
+    // List registered tools
+    println("Registered tools:")
+    registry.listTools().forEach { tool ->
+        println("  - ${tool.name}: ${tool.description}")
+    }
+    
+    // Execute the tool
+    val result = registry.executeTool(
+        "calculator",
+        """{"operation": "add", "a": 3, "b": 7}"""
+    )
+    
+    println("Success: ${result.success}")
+    println("Output: ${result.outputJson}")
+}
+```
+
+### Example 6: Null Safety and Result Handling
+
+```kotlin
+import org.mofa.*
+
+// Result wrapper for better error handling
+sealed class AgentResult<out T> {
+    data class Success<T>(val value: T) : AgentResult<T>()
+    data class Failure(val error: MoFaError) : AgentResult<Nothing>()
+}
+
+// Extension function for safe execution
+fun <T> runAgentOperation(operation: () -> T): AgentResult<T> {
+    return try {
+        AgentResult.Success(operation())
+    } catch (e: MoFaError) {
+        AgentResult.Failure(e)
+    }
+}
+
+fun main() {
+    val apiKey = System.getenv("OPENAI_API_KEY")
+    
+    // Use null safety
+    val agent = apiKey?.let { key ->
+        runAgentOperation {
+            UniFFI.INSTANCE.newLlmAgentBuilder()
+                .setOpenaiProvider(key, null, "gpt-3.5-turbo")
+                .build()
+        }
+    }
+    
+    when (agent) {
+        is AgentResult.Success -> {
+            val response = runAgentOperation {
+                agent.value.ask("What is Kotlin?")
+            }
+            
+            when (response) {
+                is AgentResult.Success -> println("Response: ${response.value}")
+                is AgentResult.Failure -> println("Error: ${response.error.message}")
+            }
+        }
+        is AgentResult.Failure -> println("Failed to create agent: ${agent.error.message}")
+        null -> println("API key not set")
+    }
+}
+```
+
+### Example 7: Data Classes for Configuration
+
+```kotlin
+import org.mofa.*
+
+data class AgentConfig(
+    val id: String,
+    val name: String,
+    val systemPrompt: String = "You are a helpful assistant.",
+    val temperature: Float = 0.7f,
+    val maxTokens: Int = 1000,
+    val contextWindowSize: Int? = null
+)
+
+fun LLMAgentBuilder.applyConfig(config: AgentConfig): LLMAgentBuilder {
+    var builder = this
+        .setId(config.id)
+        .setName(config.name)
+        .setSystemPrompt(config.systemPrompt)
+        .setTemperature(config.temperature)
+        .setMaxTokens(config.maxTokens)
+    
+    config.contextWindowSize?.let {
+        builder = builder.setContextWindowSize(it)
+    }
+    
+    return builder
+}
+
+fun main() {
+    val config = AgentConfig(
+        id = "kotlin-agent",
+        name = "Kotlin Assistant",
+        systemPrompt = "You are an expert Kotlin developer.",
+        temperature = 0.8f,
+        maxTokens = 2000,
+        contextWindowSize = 20
+    )
+    
+    val apiKey = System.getenv("OPENAI_API_KEY") ?: error("API key not set")
+    
+    val agent = UniFFI.INSTANCE.newLlmAgentBuilder()
+        .applyConfig(config)
+        .setOpenaiProvider(apiKey, null, "gpt-4")
+        .build()
+    
+    println("Agent ${agent.name()} created with ID: ${agent.agentId()}")
+}
+```
+
+## Error Handling
+
+### Exception Types
+
+```kotlin
+import org.mofa.MoFaError
+
+fun main() {
+    try {
+        val builder = UniFFI.INSTANCE.newLlmAgentBuilder()
+            .setOpenaiProvider(
+                System.getenv("OPENAI_API_KEY") ?: error("API key not set"),
+                null,
+                "gpt-3.5-turbo"
+            )
+        val agent = builder.build()
+        
+        val response = agent.ask("Hello!")
+        println(response)
+        
+    } catch (e: MoFaError) {
+        when {
+            "ConfigError" in e.message.orEmpty() -> println("Configuration error: ${e.message}")
+            "RuntimeError" in e.message.orEmpty() -> println("Runtime error: ${e.message}")
+            "LLMError" in e.message.orEmpty() -> println("LLM provider error: ${e.message}")
+            "IoError" in e.message.orEmpty() -> println("I/O error: ${e.message}")
+            "InvalidArgument" in e.message.orEmpty() -> println("Invalid argument: ${e.message}")
+            "ToolError" in e.message.orEmpty() -> println("Tool execution error: ${e.message}")
+            "SessionError" in e.message.orEmpty() -> println("Session management error: ${e.message}")
+            else -> println("Unknown error: ${e.message}")
+        }
+        e.printStackTrace()
+    }
+}
+```
+
+### Sealed Class Error Handling
+
+```kotlin
+import org.mofa.*
+
+sealed class AppError {
+    data class Configuration(val message: String) : AppError()
+    data class Runtime(val message: String) : AppError()
+    data class LLM(val message: String) : AppError()
+    data class Unknown(val message: String) : AppError()
+}
+
+fun MoFaError.toAppError(): AppError {
+    val message = this.message.orEmpty()
+    return when {
+        "ConfigError" in message -> AppError.Configuration(message)
+        "RuntimeError" in message -> AppError.Runtime(message)
+        "LLMError" in message -> AppError.LLM(message)
+        else -> AppError.Unknown(message)
+    }
+}
+
+fun main() {
+    val result = try {
+        val agent = UniFFI.INSTANCE.newLlmAgentBuilder()
+            .setOpenaiProvider(
+                System.getenv("OPENAI_API_KEY") ?: error("API key not set"),
+                null,
+                "gpt-3.5-turbo"
+            )
+            .build()
+        Result.success(agent)
+    } catch (e: MoFaError) {
+        Result.failure(e.toAppError())
+    }
+    
+    result.fold(
+        onSuccess = { agent ->
+            println("Agent created: ${agent.name()}")
+        },
+        onFailure = { error ->
+            when (error as AppError) {
+                is AppError.Configuration -> println("Config error: ${error.message}")
+                is AppError.Runtime -> println("Runtime error: ${error.message}")
+                is AppError.LLM -> println("LLM error: ${error.message}")
+                is AppError.Unknown -> println("Unknown error: ${error.message}")
+            }
+        }
+    )
+}
+```
+
+## Best Practices
+
+### 1. Use Kotlin DSL
+
+```kotlin
+fun llmAgent(block: LLMAgentBuilder.() -> Unit): LLMAgent {
+    val builder = UniFFI.INSTANCE.newLlmAgentBuilder()
+    builder.block()
+    return builder.build()
+}
+
+fun main() {
+    val agent = llmAgent {
+        setId("dsl-agent")
+        setName("DSL Agent")
+        setSystemPrompt("You are a helpful assistant.")
+        setTemperature(0.7f)
+        setOpenaiProvider(
+            System.getenv("OPENAI_API_KEY") ?: error("API key not set"),
+            null,
+            "gpt-3.5-turbo"
+        )
+    }
+}
+```
+
+### 2. Leverage Null Safety
+
+```kotlin
+fun getAgent(): LLMAgent? {
+    val apiKey = System.getenv("OPENAI_API_KEY") ?: return null
+    
+    return try {
+        UniFFI.INSTANCE.newLlmAgentBuilder()
+            .setOpenaiProvider(apiKey, null, "gpt-3.5-turbo")
+            .build()
+    } catch (e: MoFaError) {
+        null
+    }
+}
+
+fun main() {
+    val agent = getAgent() ?: run {
+        println("Failed to create agent")
+        return
+    }
+    
+    val response = agent.ask("Hello!")
+    println(response)
+}
+```
+
+### 3. Use Inline Classes for Type Safety
+
+```kotlin
+@JvmInline
+value class ApiKey(val value: String)
+
+@JvmInline
+value class AgentId(val value: String)
+
+fun createAgent(apiKey: ApiKey, agentId: AgentId): LLMAgent {
+    return UniFFI.INSTANCE.newLlmAgentBuilder()
+        .setId(agentId.value)
+        .setOpenaiProvider(apiKey.value, null, "gpt-3.5-turbo")
+        .build()
+}
+
+fun main() {
+    val apiKey = ApiKey(System.getenv("OPENAI_API_KEY") ?: error("API key not set"))
+    val agentId = AgentId("kotlin-agent")
+    
+    val agent = createAgent(apiKey, agentId)
+    println("Created agent: ${agent.agentId()}")
+}
+```
+
+## Gradle Configuration
+
+### Complete build.gradle.kts
+
+```kotlin
+plugins {
+    kotlin("jvm") version "1.9.0"
+    application
+}
+
+group = "com.example"
+version = "1.0-SNAPSHOT"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // MoFA SDK
+    implementation("org.mofa:mofa-sdk:0.1.0")
+    
+    // Kotlin coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    
+    // JSON serialization
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+    
+    // Testing
+    testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+kotlin {
+    jvmToolchain(11)
+}
+
+application {
+    mainClass.set("com.example.MainKt")
+}
+```
+
+## Troubleshooting
+
+### Library Not Found
+
+```bash
+# If you get: UnsatisfiedLinkError: no mofa_ffi in java.library.path
+
+cd mofa
+cargo build --release --features uniffi -p mofa-ffi
+
+# Set library path when running
+export LD_LIBRARY_PATH=/path/to/mofa/target/release:$LD_LIBRARY_PATH
+```
+
+### API Key Issues
+
+```kotlin
+// Verify API key is set
+val apiKey = System.getenv("OPENAI_API_KEY")
+requireNotNull(apiKey) {
+    "OPENAI_API_KEY environment variable not set. " +
+    "Set it with: export OPENAI_API_KEY=your-key"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Swift Bindings" icon="swift" href="/bindings/swift">
+    Use MoFA on iOS and macOS
+  </Card>
+  <Card title="Java Bindings" icon="java" href="/bindings/java">
+    Java integration guide
+  </Card>
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples">
+    Browse full Kotlin examples
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Complete API documentation
+  </Card>
+</CardGroup>

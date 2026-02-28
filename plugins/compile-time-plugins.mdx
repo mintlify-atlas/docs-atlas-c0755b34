@@ -1,0 +1,510 @@
+---
+title: Compile-time Plugins
+description: Build high-performance Rust plugins compiled into your MoFA agent for zero-cost abstractions
+---
+
+# Compile-time Plugins
+
+Compile-time plugins are Rust implementations that are compiled directly into your agent binary, providing maximum performance with zero-cost abstractions. They're ideal for performance-critical operations like LLM integration, data processing, and system integration.
+
+## Why Compile-time Plugins?
+
+<CardGroup cols={2}>
+  <Card title="Performance" icon="bolt">
+    Zero overhead - compiled to native code
+  </Card>
+  <Card title="Type Safety" icon="shield-check">
+    Full Rust type system and compiler checks
+  </Card>
+  <Card title="Native Integration" icon="link">
+    Direct access to OS and system APIs
+  </Card>
+  <Card title="Reusability" icon="recycle">
+    Publish to crates.io for community use
+  </Card>
+</CardGroup>
+
+## Creating a Custom Plugin
+
+Let's build a calculator tool plugin from scratch:
+
+<Steps>
+  <Step title="Define the Tool">
+    Create a struct implementing `ToolExecutor`:
+
+    ```rust examples/plugin_system/src/main.rs
+    use mofa_plugins::{
+        ToolDefinition, ToolExecutor, PluginResult, PluginError
+    };
+
+    struct CalculatorTool {
+        definition: ToolDefinition,
+    }
+
+    impl CalculatorTool {
+        fn new() -> Self {
+            Self {
+                definition: ToolDefinition {
+                    name: "calculator".to_string(),
+                    description: "Perform basic arithmetic operations".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "operation": {
+                                "type": "string",
+                                "enum": ["add", "subtract", "multiply", "divide"]
+                            },
+                            "a": { "type": "number" },
+                            "b": { "type": "number" }
+                        },
+                        "required": ["operation", "a", "b"]
+                    }),
+                    requires_confirmation: false,
+                },
+            }
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Implement ToolExecutor">
+    Add execution logic:
+
+    ```rust examples/plugin_system/src/main.rs
+    #[async_trait::async_trait]
+    impl ToolExecutor for CalculatorTool {
+        fn definition(&self) -> &ToolDefinition {
+            &self.definition
+        }
+
+        async fn execute(&self, arguments: serde_json::Value) -> PluginResult<serde_json::Value> {
+            let op = arguments["operation"].as_str().unwrap_or("add");
+            let a = arguments["a"].as_f64().unwrap_or(0.0);
+            let b = arguments["b"].as_f64().unwrap_or(0.0);
+
+            let result = match op {
+                "add" => a + b,
+                "subtract" => a - b,
+                "multiply" => a * b,
+                "divide" => {
+                    if b == 0.0 {
+                        return Err(PluginError::ExecutionFailed(
+                            "Division by zero".to_string()
+                        ));
+                    }
+                    a / b
+                }
+                _ => return Err(PluginError::ExecutionFailed(
+                    format!("Unknown operation: {}", op)
+                )),
+            };
+
+            Ok(serde_json::json!({
+                "result": result,
+                "operation": op,
+                "a": a,
+                "b": b
+            }))
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Register the Tool">
+    Add to a `ToolPlugin`:
+
+    ```rust examples/plugin_system/src/main.rs
+    let mut tool_plugin = ToolPlugin::new("tools_main");
+    tool_plugin.register_tool(CalculatorTool::new());
+
+    manager.register(tool_plugin).await?;
+    ```
+  </Step>
+
+  <Step title="Use the Tool">
+    Execute via the plugin manager:
+
+    ```rust examples/plugin_system/src/main.rs
+    let calc_call = serde_json::json!({
+        "name": "calculator",
+        "arguments": {
+            "operation": "multiply",
+            "a": 7,
+            "b": 8
+        },
+        "call_id": "calc_001"
+    });
+
+    let result = manager.execute("tools_main", calc_call.to_string()).await?;
+    // Result: {"call_id":"calc_001","success":true,"result":{"result":56,"operation":"multiply","a":7,"b":8}}
+    ```
+  </Step>
+</Steps>
+
+## Built-in Plugin Types
+
+MoFA provides several ready-to-use plugin types:
+
+### LLM Plugin
+
+Integrate language models:
+
+```rust mofa-plugins/src/lib.rs
+use mofa_plugins::{LLMPlugin, LLMPluginConfig, ChatMessage};
+
+// Configure LLM
+let llm_config = LLMPluginConfig {
+    model: "gpt-4".to_string(),
+    max_tokens: 4096,
+    temperature: 0.7,
+    ..Default::default()
+};
+
+// Create and register
+let mut llm = LLMPlugin::new("llm_main")
+    .with_config(llm_config);
+
+manager.register(llm).await?;
+
+// Use for chat
+let messages = vec![
+    ChatMessage::system("You are a helpful assistant"),
+    ChatMessage::user("What is Rust?"),
+];
+
+let response = manager.execute(
+    "llm_main",
+    serde_json::to_string(&messages)?
+).await?;
+```
+
+### Storage Plugin
+
+Persistent key-value storage:
+
+```rust mofa-plugins/src/lib.rs
+use mofa_plugins::{StoragePlugin, MemoryStorage};
+
+// Create with in-memory backend
+let storage = StoragePlugin::new("storage_main")
+    .with_backend(MemoryStorage::new());
+
+manager.register(storage).await?;
+
+// Store data
+manager.execute("storage_main", "set user:name Alice".to_string()).await?;
+manager.execute("storage_main", "set user:age 30".to_string()).await?;
+
+// Retrieve data
+let name = manager.execute("storage_main", "get user:name".to_string()).await?;
+let age = manager.execute("storage_main", "get user:age".to_string()).await?;
+
+println!("User: name={}, age={}", name, age);
+```
+
+### Memory Plugin
+
+Agent memory management:
+
+```rust mofa-plugins/src/lib.rs
+use mofa_plugins::MemoryPlugin;
+
+let memory = MemoryPlugin::new("memory_main")
+    .with_max_memories(1000);
+
+manager.register(memory).await?;
+
+// Add memories with importance scores
+manager.execute(
+    "memory_main",
+    "add User prefers dark mode 0.9".to_string()
+).await?;
+
+manager.execute(
+    "memory_main",
+    "add Last query was about weather 0.6".to_string()
+).await?;
+
+// Search memories
+let results = manager.execute(
+    "memory_main",
+    "search weather".to_string()
+).await?;
+
+println!("Found memories: {}", results);
+```
+
+## Custom Plugin Implementation
+
+Create a complete custom plugin:
+
+```rust examples/plugin_system/src/main.rs
+use mofa_plugins::{
+    AgentPlugin, PluginContext, PluginMetadata, PluginResult,
+    PluginState, PluginType, PluginPriority
+};
+use std::any::Any;
+use std::collections::HashMap;
+
+struct MonitorPlugin {
+    metadata: PluginMetadata,
+    state: PluginState,
+    metrics: HashMap<String, f64>,
+    alert_threshold: f64,
+}
+
+impl MonitorPlugin {
+    fn new(plugin_id: &str) -> Self {
+        let metadata = PluginMetadata::new(
+            plugin_id,
+            "Monitor Plugin",
+            PluginType::Monitor
+        )
+        .with_description("System monitoring and alerting plugin")
+        .with_capability("metrics")
+        .with_capability("alerting")
+        .with_priority(PluginPriority::High);
+
+        Self {
+            metadata,
+            state: PluginState::Unloaded,
+            metrics: HashMap::new(),
+            alert_threshold: 80.0,
+        }
+    }
+
+    fn record_metric(&mut self, name: &str, value: f64) {
+        self.metrics.insert(name.to_string(), value);
+        if value > self.alert_threshold {
+            warn!("ALERT: {} exceeded threshold: {} > {}",
+                name, value, self.alert_threshold);
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentPlugin for MonitorPlugin {
+    fn metadata(&self) -> &PluginMetadata {
+        &self.metadata
+    }
+
+    fn state(&self) -> PluginState {
+        self.state.clone()
+    }
+
+    async fn load(&mut self, _ctx: &PluginContext) -> PluginResult<()> {
+        self.state = PluginState::Loading;
+        info!("Loading Monitor plugin: {}", self.metadata.id);
+        self.state = PluginState::Loaded;
+        Ok(())
+    }
+
+    async fn init_plugin(&mut self) -> PluginResult<()> {
+        info!("Initializing Monitor plugin: {}", self.metadata.id);
+        // Initialize base metrics
+        self.metrics.insert("cpu_usage".to_string(), 0.0);
+        self.metrics.insert("memory_usage".to_string(), 0.0);
+        Ok(())
+    }
+
+    async fn start(&mut self) -> PluginResult<()> {
+        self.state = PluginState::Running;
+        info!("Monitor plugin {} started", self.metadata.id);
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> PluginResult<()> {
+        self.state = PluginState::Paused;
+        info!("Monitor plugin {} stopped", self.metadata.id);
+        Ok(())
+    }
+
+    async fn unload(&mut self) -> PluginResult<()> {
+        self.metrics.clear();
+        self.state = PluginState::Unloaded;
+        info!("Monitor plugin {} unloaded", self.metadata.id);
+        Ok(())
+    }
+
+    async fn execute(&mut self, input: String) -> PluginResult<String> {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        match parts.as_slice() {
+            ["record", name, value] => {
+                let v: f64 = value.parse().unwrap_or(0.0);
+                self.record_metric(name, v);
+                Ok(format!("Recorded {} = {}", name, v))
+            }
+            ["get", name] => {
+                Ok(self.metrics.get(*name)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "null".to_string()))
+            }
+            ["list"] => Ok(serde_json::to_string(&self.metrics)?),
+            _ => Err(PluginError::ExecutionFailed(
+                "Invalid command".to_string()
+            )),
+        }
+    }
+
+    fn stats(&self) -> HashMap<String, serde_json::Value> {
+        let mut stats = HashMap::new();
+        stats.insert("metric_count".to_string(),
+            serde_json::json!(self.metrics.len()));
+        stats.insert("alert_threshold".to_string(),
+            serde_json::json!(self.alert_threshold));
+        stats
+    }
+
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> { self }
+}
+```
+
+## Plugin Configuration
+
+Use `PluginConfig` for flexible configuration:
+
+```rust
+use mofa_plugins::{PluginConfig, PluginManager};
+
+let mut config = PluginConfig::new();
+config.set("model", "gpt-4");
+config.set("max_tokens", 4096);
+config.set("temperature", 0.7);
+config.set("timeout_secs", 30);
+config.set("enabled", true);
+config.set("auto_start", true);
+
+let llm = LLMPlugin::new("llm_001");
+manager.register_with_config(llm, config).await?;
+```
+
+## Plugin Priority
+
+Control initialization order with priorities:
+
+```rust
+use mofa_plugins::PluginPriority;
+
+let metadata = PluginMetadata::new("critical", "Critical Plugin", PluginType::Tool)
+    .with_priority(PluginPriority::Critical); // Initialized first
+
+let metadata = PluginMetadata::new("high", "High Plugin", PluginType::Tool)
+    .with_priority(PluginPriority::High);
+
+let metadata = PluginMetadata::new("normal", "Normal Plugin", PluginType::Tool)
+    .with_priority(PluginPriority::Normal);
+
+let metadata = PluginMetadata::new("low", "Low Plugin", PluginType::Tool)
+    .with_priority(PluginPriority::Low); // Initialized last
+```
+
+<Note>
+Plugins are initialized in priority order (highest first). Plugins with the same priority are initialized in registration order.
+</Note>
+
+## Error Handling
+
+Handle plugin errors gracefully:
+
+```rust
+use mofa_plugins::PluginError;
+
+match manager.execute("my_plugin", input).await {
+    Ok(result) => println!("Success: {}", result),
+    Err(PluginError::InitFailed(msg)) => {
+        eprintln!("Plugin not initialized: {}", msg);
+    }
+    Err(PluginError::ExecutionFailed(msg)) => {
+        eprintln!("Execution failed: {}", msg);
+    }
+    Err(PluginError::NotFound(id)) => {
+        eprintln!("Plugin not found: {}", id);
+    }
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+## Testing Plugins
+
+Write tests for your plugins:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_calculator_tool() {
+        let tool = CalculatorTool::new();
+
+        let args = serde_json::json!({
+            "operation": "add",
+            "a": 10,
+            "b": 5
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert_eq!(result["result"], 15.0);
+    }
+
+    #[tokio::test]
+    async fn test_monitor_plugin_lifecycle() {
+        let mut plugin = MonitorPlugin::new("test_monitor");
+        let ctx = PluginContext::new("test_agent");
+
+        plugin.load(&ctx).await.unwrap();
+        assert_eq!(plugin.state(), PluginState::Loaded);
+
+        plugin.init_plugin().await.unwrap();
+        plugin.start().await.unwrap();
+        assert_eq!(plugin.state(), PluginState::Running);
+
+        plugin.stop().await.unwrap();
+        assert_eq!(plugin.state(), PluginState::Paused);
+
+        plugin.unload().await.unwrap();
+        assert_eq!(plugin.state(), PluginState::Unloaded);
+    }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use proper error handling">
+    Always return `PluginResult` with descriptive error messages. Avoid panicking.
+  </Accordion>
+
+  <Accordion title="Implement idempotent operations">
+    Plugin lifecycle methods should be safe to call multiple times.
+  </Accordion>
+
+  <Accordion title="Clean up resources">
+    Release connections, files, and memory in the `unload` method.
+  </Accordion>
+
+  <Accordion title="Document capabilities">
+    Use metadata to clearly document what your plugin can do.
+  </Accordion>
+
+  <Accordion title="Version your plugins">
+    Include version information for compatibility tracking.
+  </Accordion>
+
+  <Accordion title="Make plugins stateless when possible">
+    Use the shared context for state instead of internal mutable state.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Runtime Plugins" icon="bolt" href="/plugins/runtime-plugins">
+    Create hot-reloadable Rhai plugins
+  </Card>
+  <Card title="WASM Plugins" icon="cube" href="/plugins/wasm-plugins">
+    Build sandboxed WebAssembly plugins
+  </Card>
+</CardGroup>

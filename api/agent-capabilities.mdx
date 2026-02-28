@@ -1,0 +1,533 @@
+---
+title: 'AgentCapabilities & AgentRequirements'
+description: 'Agent capability discovery and matching system'
+icon: 'magnifying-glass'
+---
+
+# AgentCapabilities & AgentRequirements
+
+The capability system enables agent discovery, matching, and routing based on required features and tags. It consists of two main types:
+
+- **AgentCapabilities** - Describes what an agent can do
+- **AgentRequirements** - Describes what is needed for a task
+
+Location: `mofa-kernel/src/agent/capabilities.rs`
+
+## AgentCapabilities
+
+### Type Definition
+
+```rust
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentCapabilities {
+    pub tags: HashSet<String>,
+    pub input_types: HashSet<InputType>,
+    pub output_types: HashSet<OutputType>,
+    pub max_context_length: Option<usize>,
+    pub reasoning_strategies: Vec<ReasoningStrategy>,
+    pub supports_streaming: bool,
+    pub supports_conversation: bool,
+    pub supports_tools: bool,
+    pub supports_coordination: bool,
+    pub custom: HashMap<String, serde_json::Value>,
+}
+```
+
+### Fields
+
+<ParamField path="tags" type="HashSet<String>" default="{}">
+  Capability tags like `"llm"`, `"coding"`, `"research"` for discovery and matching
+</ParamField>
+
+<ParamField path="input_types" type="HashSet<InputType>" default="{}">
+  Supported input types (Text, Image, Audio, Video, Structured, Binary)
+</ParamField>
+
+<ParamField path="output_types" type="HashSet<OutputType>" default="{}">
+  Supported output types (Text, Json, Stream, Binary, Multimodal)
+</ParamField>
+
+<ParamField path="max_context_length" type="Option<usize>">
+  Maximum context length for LLM-based agents (in tokens)
+</ParamField>
+
+<ParamField path="reasoning_strategies" type="Vec<ReasoningStrategy>" default="[]">
+  Supported reasoning strategies (Direct, ReAct, ChainOfThought, etc.)
+</ParamField>
+
+<ParamField path="supports_streaming" type="bool" default="false">
+  Whether streaming output is supported
+</ParamField>
+
+<ParamField path="supports_conversation" type="bool" default="false">
+  Whether multi-turn conversation is supported
+</ParamField>
+
+<ParamField path="supports_tools" type="bool" default="false">
+  Whether tool calling is supported
+</ParamField>
+
+<ParamField path="supports_coordination" type="bool" default="false">
+  Whether multi-agent coordination is supported
+</ParamField>
+
+<ParamField path="custom" type="HashMap<String, serde_json::Value>" default="{}">
+  Custom capability flags for domain-specific features
+</ParamField>
+
+### Constructor Methods
+
+```rust
+impl AgentCapabilities {
+    pub fn new() -> Self;
+    pub fn builder() -> AgentCapabilitiesBuilder;
+}
+```
+
+### Query Methods
+
+<ResponseField name="has_tag" type="fn(&self, tag: &str) -> bool">
+  Checks if a specific tag is present
+  
+  ```rust
+  if caps.has_tag("llm") {
+      println!("This is an LLM agent");
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="supports_input" type="fn(&self, input_type: &InputType) -> bool">
+  Checks if a specific input type is supported
+  
+  ```rust
+  if caps.supports_input(&InputType::Image) {
+      println!("Agent can process images");
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="supports_output" type="fn(&self, output_type: &OutputType) -> bool">
+  Checks if a specific output type is supported
+</ResponseField>
+
+<ResponseField name="matches" type="fn(&self, requirements: &AgentRequirements) -> bool">
+  Checks if capabilities match the given requirements
+  
+  ```rust
+  if caps.matches(&requirements) {
+      println!("Agent meets requirements");
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="match_score" type="fn(&self, requirements: &AgentRequirements) -> f64">
+  Calculates match score (0.0 - 1.0+) for ranking agents
+  
+  ```rust
+  let score = caps.match_score(&requirements);
+  println!("Match score: {:.2}", score);
+  ```
+</ResponseField>
+
+## AgentCapabilitiesBuilder
+
+### Builder Methods
+
+<ResponseField name="new" type="fn() -> Self">
+  Creates a new builder
+</ResponseField>
+
+<ResponseField name="tag" type="fn(self, tag: impl Into<String>) -> Self">
+  Adds a capability tag
+  
+  ```rust
+  let builder = AgentCapabilitiesBuilder::new()
+      .tag("llm")
+      .tag("coding");
+  ```
+</ResponseField>
+
+<ResponseField name="tags" type="fn(self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self">
+  Adds multiple tags at once
+  
+  ```rust
+  let builder = AgentCapabilitiesBuilder::new()
+      .tags(vec!["llm", "research", "analysis"]);
+  ```
+</ResponseField>
+
+<ResponseField name="input_type" type="fn(self, input_type: InputType) -> Self">
+  Adds a supported input type
+</ResponseField>
+
+<ResponseField name="output_type" type="fn(self, output_type: OutputType) -> Self">
+  Adds a supported output type
+</ResponseField>
+
+<ResponseField name="max_context_length" type="fn(self, length: usize) -> Self">
+  Sets maximum context length
+</ResponseField>
+
+<ResponseField name="reasoning_strategy" type="fn(self, strategy: ReasoningStrategy) -> Self">
+  Adds a supported reasoning strategy
+</ResponseField>
+
+<ResponseField name="supports_streaming" type="fn(self, supports: bool) -> Self">
+  Sets streaming support flag
+</ResponseField>
+
+<ResponseField name="supports_conversation" type="fn(self, supports: bool) -> Self">
+  Sets conversation support flag
+</ResponseField>
+
+<ResponseField name="supports_tools" type="fn(self, supports: bool) -> Self">
+  Sets tool support flag
+</ResponseField>
+
+<ResponseField name="supports_coordination" type="fn(self, supports: bool) -> Self">
+  Sets coordination support flag
+</ResponseField>
+
+<ResponseField name="custom" type="fn(self, key: impl Into<String>, value: serde_json::Value) -> Self">
+  Adds a custom capability
+</ResponseField>
+
+<ResponseField name="build" type="fn(self) -> AgentCapabilities">
+  Builds the capabilities object
+</ResponseField>
+
+### Example Usage
+
+```rust
+use mofa_sdk::kernel::{AgentCapabilities, InputType, OutputType, ReasoningStrategy};
+
+let caps = AgentCapabilities::builder()
+    .tag("llm")
+    .tag("coding")
+    .tag("assistant")
+    .input_type(InputType::Text)
+    .output_type(OutputType::Text)
+    .output_type(OutputType::Json)
+    .max_context_length(128000)
+    .reasoning_strategy(ReasoningStrategy::ReAct { max_iterations: 10 })
+    .supports_streaming(true)
+    .supports_conversation(true)
+    .supports_tools(true)
+    .custom("model", json!("gpt-4o"))
+    .build();
+```
+
+## AgentRequirements
+
+### Type Definition
+
+```rust
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentRequirements {
+    pub required_tags: HashSet<String>,
+    pub preferred_tags: HashSet<String>,
+    pub input_types: HashSet<InputType>,
+    pub output_types: HashSet<OutputType>,
+    pub requires_streaming: bool,
+    pub requires_tools: bool,
+    pub requires_conversation: bool,
+    pub requires_coordination: bool,
+}
+```
+
+### Fields
+
+<ParamField path="required_tags" type="HashSet<String>" default="{}">
+  Tags that the agent MUST have (hard requirement)
+</ParamField>
+
+<ParamField path="preferred_tags" type="HashSet<String>" default="{}">
+  Tags that are nice to have (used for ranking)
+</ParamField>
+
+<ParamField path="input_types" type="HashSet<InputType>" default="{}">
+  Required input types the agent must support
+</ParamField>
+
+<ParamField path="output_types" type="HashSet<OutputType>" default="{}">
+  Required output types the agent must support
+</ParamField>
+
+<ParamField path="requires_streaming" type="bool" default="false">
+  Whether streaming output is required
+</ParamField>
+
+<ParamField path="requires_tools" type="bool" default="false">
+  Whether tool support is required
+</ParamField>
+
+<ParamField path="requires_conversation" type="bool" default="false">
+  Whether multi-turn conversation is required
+</ParamField>
+
+<ParamField path="requires_coordination" type="bool" default="false">
+  Whether multi-agent coordination is required
+</ParamField>
+
+### Constructor Methods
+
+```rust
+impl AgentRequirements {
+    pub fn new() -> Self;
+    pub fn builder() -> AgentRequirementsBuilder;
+}
+```
+
+### Query Methods
+
+<ResponseField name="matches" type="fn(&self, capabilities: &AgentCapabilities) -> bool">
+  Checks if given capabilities meet these requirements
+</ResponseField>
+
+<ResponseField name="score" type="fn(&self, capabilities: &AgentCapabilities) -> f32">
+  Calculates match score for ranking
+</ResponseField>
+
+## AgentRequirementsBuilder
+
+### Builder Methods
+
+<ResponseField name="new" type="fn() -> Self">
+  Creates a new builder
+</ResponseField>
+
+<ResponseField name="require_tag" type="fn(self, tag: impl Into<String>) -> Self">
+  Adds a required tag (hard requirement)
+</ResponseField>
+
+<ResponseField name="prefer_tag" type="fn(self, tag: impl Into<String>) -> Self">
+  Adds a preferred tag (for ranking)
+</ResponseField>
+
+<ResponseField name="require_input" type="fn(self, input_type: InputType) -> Self">
+  Requires a specific input type
+</ResponseField>
+
+<ResponseField name="require_output" type="fn(self, output_type: OutputType) -> Self">
+  Requires a specific output type
+</ResponseField>
+
+<ResponseField name="require_streaming" type="fn(self) -> Self">
+  Requires streaming support
+</ResponseField>
+
+<ResponseField name="require_tools" type="fn(self) -> Self">
+  Requires tool support
+</ResponseField>
+
+<ResponseField name="require_conversation" type="fn(self) -> Self">
+  Requires conversation support
+</ResponseField>
+
+<ResponseField name="require_coordination" type="fn(self) -> Self">
+  Requires coordination support
+</ResponseField>
+
+<ResponseField name="build" type="fn(self) -> AgentRequirements">
+  Builds the requirements object
+</ResponseField>
+
+### Example Usage
+
+```rust
+use mofa_sdk::kernel::{AgentRequirements, InputType, OutputType};
+
+let requirements = AgentRequirements::builder()
+    .require_tag("llm")           // Must have
+    .prefer_tag("coding")         // Nice to have
+    .prefer_tag("research")
+    .require_input(InputType::Text)
+    .require_output(OutputType::Text)
+    .require_tools()
+    .require_streaming()
+    .build();
+```
+
+## ReasoningStrategy
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+pub enum ReasoningStrategy {
+    #[default]
+    Direct,
+    ReAct { max_iterations: usize },
+    ChainOfThought,
+    TreeOfThought { branching_factor: usize },
+    Custom(String),
+}
+```
+
+### Variants
+
+<ParamField path="Direct" type="()" default>
+  Direct LLM reasoning without structured approach
+</ParamField>
+
+<ParamField path="ReAct" type="{ max_iterations: usize }">
+  ReAct-style Thought-Action-Observation loop
+  
+  ```rust
+  ReasoningStrategy::ReAct { max_iterations: 10 }
+  ```
+</ParamField>
+
+<ParamField path="ChainOfThought" type="()">
+  Chain of Thought reasoning (step-by-step)
+</ParamField>
+
+<ParamField path="TreeOfThought" type="{ branching_factor: usize }">
+  Tree of Thought exploration with branching
+  
+  ```rust
+  ReasoningStrategy::TreeOfThought { branching_factor: 3 }
+  ```
+</ParamField>
+
+<ParamField path="Custom" type="String">
+  Custom reasoning mode
+  
+  ```rust
+  ReasoningStrategy::Custom("hybrid-reasoning".to_string())
+  ```
+</ParamField>
+
+## InputType & OutputType
+
+### InputType
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum InputType {
+    Text,
+    Image,
+    Audio,
+    Video,
+    Structured(String),
+    Binary,
+}
+```
+
+### OutputType
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum OutputType {
+    Text,
+    Json,
+    StructuredJson,
+    Stream,
+    Binary,
+    Multimodal,
+}
+```
+
+## Complete Example
+
+### Defining Agent Capabilities
+
+```rust
+use mofa_sdk::kernel::{
+    AgentCapabilities, InputType, OutputType, ReasoningStrategy
+};
+use serde_json::json;
+
+// LLM coding assistant
+let coding_agent_caps = AgentCapabilities::builder()
+    .tags(vec!["llm", "coding", "rust"])
+    .input_type(InputType::Text)
+    .output_type(OutputType::Text)
+    .output_type(OutputType::Json)
+    .max_context_length(128000)
+    .reasoning_strategy(ReasoningStrategy::ChainOfThought)
+    .supports_streaming(true)
+    .supports_conversation(true)
+    .supports_tools(true)
+    .custom("programming_languages", json!(["rust", "python", "go"]))
+    .build();
+
+// Research assistant
+let research_agent_caps = AgentCapabilities::builder()
+    .tags(vec!["llm", "research", "web-search"])
+    .input_type(InputType::Text)
+    .output_type(OutputType::Text)
+    .reasoning_strategy(ReasoningStrategy::ReAct { max_iterations: 15 })
+    .supports_tools(true)
+    .supports_conversation(true)
+    .custom("search_engines", json!(["google", "bing"]))
+    .build();
+```
+
+### Matching Agents to Requirements
+
+```rust
+use mofa_sdk::kernel::{AgentRequirements, InputType};
+
+let requirements = AgentRequirements::builder()
+    .require_tag("llm")
+    .require_tag("coding")
+    .prefer_tag("rust")
+    .require_input(InputType::Text)
+    .require_tools()
+    .build();
+
+// Check if agent matches
+if coding_agent_caps.matches(&requirements) {
+    let score = coding_agent_caps.match_score(&requirements);
+    println!("Coding agent matches! Score: {:.2}", score);
+}
+
+if research_agent_caps.matches(&requirements) {
+    let score = research_agent_caps.match_score(&requirements);
+    println!("Research agent matches! Score: {:.2}", score);
+} else {
+    println!("Research agent doesn't match requirements");
+}
+```
+
+### Agent Registry with Capability Matching
+
+```rust
+use mofa_sdk::kernel::{AgentCapabilities, AgentRequirements};
+use std::collections::HashMap;
+
+struct AgentRegistry {
+    agents: HashMap<String, AgentCapabilities>,
+}
+
+impl AgentRegistry {
+    fn find_best_match(&self, requirements: &AgentRequirements) -> Option<String> {
+        self.agents
+            .iter()
+            .filter(|(_, caps)| caps.matches(requirements))
+            .max_by(|(_, caps_a), (_, caps_b)| {
+                caps_a.match_score(requirements)
+                    .partial_cmp(&caps_b.match_score(requirements))
+                    .unwrap()
+            })
+            .map(|(id, _)| id.clone())
+    }
+}
+
+// Usage
+let mut registry = AgentRegistry { agents: HashMap::new() };
+registry.agents.insert("coding-agent".to_string(), coding_agent_caps);
+registry.agents.insert("research-agent".to_string(), research_agent_caps);
+
+if let Some(agent_id) = registry.find_best_match(&requirements) {
+    println!("Best match: {}", agent_id);
+}
+```
+
+## See Also
+
+- [MoFAAgent](/api/mofa-agent) - Core agent trait
+- [AgentInput & AgentOutput](/api/agent-input-output) - Input/output types
+- [AgentContext](/api/agent-context) - Execution context

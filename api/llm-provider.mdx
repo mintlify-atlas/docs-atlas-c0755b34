@@ -1,0 +1,311 @@
+---
+title: 'LLMProvider Trait'
+description: 'Core trait for implementing LLM provider integrations'
+icon: 'plug'
+---
+
+## Overview
+
+The `LLMProvider` trait defines the standard interface for integrating Large Language Model APIs into the MoFA framework. All LLM providers (OpenAI, Anthropic, Ollama, etc.) implement this trait to provide a unified API surface.
+
+## Trait Definition
+
+```rust
+#[async_trait]
+pub trait LLMProvider: Send + Sync {
+    fn name(&self) -> &str;
+    fn default_model(&self) -> &str;
+    fn supported_models(&self) -> Vec<&str>;
+    fn supports_streaming(&self) -> bool;
+    fn supports_tools(&self) -> bool;
+    fn supports_vision(&self) -> bool;
+    fn supports_embedding(&self) -> bool;
+    
+    async fn chat(&self, request: ChatCompletionRequest) -> LLMResult<ChatCompletionResponse>;
+    async fn chat_stream(&self, request: ChatCompletionRequest) -> LLMResult<ChatStream>;
+    async fn embedding(&self, request: EmbeddingRequest) -> LLMResult<EmbeddingResponse>;
+    async fn health_check(&self) -> LLMResult<bool>;
+    async fn get_model_info(&self, model: &str) -> LLMResult<ModelInfo>;
+}
+```
+
+## Methods
+
+### Provider Metadata
+
+<ParamField path="name" type="fn() -> &str" required>
+  Returns the provider name identifier (e.g., "openai", "anthropic", "ollama")
+</ParamField>
+
+<ParamField path="default_model" type="fn() -> &str" required>
+  Returns the default model identifier used when no model is specified
+</ParamField>
+
+<ParamField path="supported_models" type="fn() -> Vec<&str>" required>
+  Returns a list of model identifiers supported by this provider
+</ParamField>
+
+### Capability Detection
+
+<ParamField path="supports_streaming" type="fn() -> bool" required>
+  Returns `true` if the provider supports streaming responses
+</ParamField>
+
+<ParamField path="supports_tools" type="fn() -> bool" required>
+  Returns `true` if the provider supports function/tool calling
+</ParamField>
+
+<ParamField path="supports_vision" type="fn() -> bool" required>
+  Returns `true` if the provider supports vision/image inputs
+</ParamField>
+
+<ParamField path="supports_embedding" type="fn() -> bool" required>
+  Returns `true` if the provider supports text embeddings
+</ParamField>
+
+### Core Operations
+
+<ParamField path="chat" type="async fn(request: ChatCompletionRequest) -> LLMResult<ChatCompletionResponse>" required>
+  Sends a chat completion request and returns the complete response
+  
+  **Parameters:**
+  - `request`: Chat completion request with messages, model, and parameters
+  
+  **Returns:**
+  - `ChatCompletionResponse`: Complete response with choices and usage data
+</ParamField>
+
+<ParamField path="chat_stream" type="async fn(request: ChatCompletionRequest) -> LLMResult<ChatStream>" required>
+  Sends a chat completion request and returns a stream of response chunks
+  
+  **Parameters:**
+  - `request`: Chat completion request with `stream` enabled
+  
+  **Returns:**
+  - `ChatStream`: Stream of `ChatCompletionChunk` items
+</ParamField>
+
+<ParamField path="embedding" type="async fn(request: EmbeddingRequest) -> LLMResult<EmbeddingResponse>" required>
+  Generates embeddings for input text(s)
+  
+  **Parameters:**
+  - `request`: Embedding request with model and input text(s)
+  
+  **Returns:**
+  - `EmbeddingResponse`: Vector embeddings and usage data
+</ParamField>
+
+<ParamField path="health_check" type="async fn() -> LLMResult<bool>" required>
+  Checks if the provider API is accessible and responding
+  
+  **Returns:**
+  - `bool`: `true` if healthy, `false` otherwise
+</ParamField>
+
+<ParamField path="get_model_info" type="async fn(model: &str) -> LLMResult<ModelInfo>" required>
+  Retrieves metadata about a specific model
+  
+  **Parameters:**
+  - `model`: Model identifier
+  
+  **Returns:**
+  - `ModelInfo`: Model capabilities, context window, and metadata
+</ParamField>
+
+## Type Definitions
+
+### ModelInfo
+
+```rust
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub context_window: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub training_cutoff: Option<String>,
+    pub capabilities: ModelCapabilities,
+}
+```
+
+### ModelCapabilities
+
+```rust
+pub struct ModelCapabilities {
+    pub streaming: bool,
+    pub tools: bool,
+    pub vision: bool,
+    pub json_mode: bool,
+    pub json_schema: bool,
+}
+```
+
+### ChatStream
+
+```rust
+pub type ChatStream = Pin<Box<dyn Stream<Item = LLMResult<ChatCompletionChunk>> + Send>>;
+```
+
+## Implementing a Custom Provider
+
+### Basic Implementation
+
+```rust
+use mofa_foundation::llm::*;
+use async_trait::async_trait;
+use std::sync::Arc;
+
+struct MyLLMProvider {
+    api_key: String,
+    base_url: String,
+}
+
+impl MyLLMProvider {
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            base_url: "https://api.example.com".to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl LLMProvider for MyLLMProvider {
+    fn name(&self) -> &str {
+        "my-llm"
+    }
+
+    fn default_model(&self) -> &str {
+        "my-model-v1"
+    }
+
+    fn supported_models(&self) -> Vec<&str> {
+        vec!["my-model-v1", "my-model-v2"]
+    }
+
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+
+    fn supports_tools(&self) -> bool {
+        true
+    }
+
+    fn supports_vision(&self) -> bool {
+        false
+    }
+
+    fn supports_embedding(&self) -> bool {
+        false
+    }
+
+    async fn chat(&self, request: ChatCompletionRequest) -> LLMResult<ChatCompletionResponse> {
+        // Convert request to provider-specific format
+        // Send HTTP request to your API
+        // Parse and convert response
+        todo!("Implement API call")
+    }
+
+    async fn chat_stream(&self, request: ChatCompletionRequest) -> LLMResult<ChatStream> {
+        // Implement streaming response
+        todo!("Implement streaming")
+    }
+
+    async fn embedding(&self, request: EmbeddingRequest) -> LLMResult<EmbeddingResponse> {
+        Err(LLMError::Other("Embeddings not supported".to_string()))
+    }
+
+    async fn health_check(&self) -> LLMResult<bool> {
+        // Send simple request to check connectivity
+        Ok(true)
+    }
+
+    async fn get_model_info(&self, model: &str) -> LLMResult<ModelInfo> {
+        Ok(ModelInfo {
+            id: model.to_string(),
+            name: model.to_string(),
+            description: Some("Custom model".to_string()),
+            context_window: Some(8192),
+            max_output_tokens: Some(2048),
+            training_cutoff: None,
+            capabilities: ModelCapabilities {
+                streaming: true,
+                tools: true,
+                vision: false,
+                json_mode: true,
+                json_schema: false,
+            },
+        })
+    }
+}
+```
+
+### Using the Custom Provider
+
+```rust
+use mofa_foundation::llm::LLMClient;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = Arc::new(MyLLMProvider::new("api-key"));
+    let client = LLMClient::new(provider);
+
+    let response = client
+        .chat()
+        .system("You are a helpful assistant.")
+        .user("What is Rust?")
+        .send()
+        .await?;
+
+    println!("Response: {}", response.content().unwrap());
+    Ok(())
+}
+```
+
+## Built-in Providers
+
+MoFA includes several built-in provider implementations:
+
+- **OpenAI**: GPT-4, GPT-3.5, with vision and tools support
+- **Anthropic**: Claude 3 models with streaming
+- **Ollama**: Local models via OpenAI-compatible API
+- **Google Gemini**: Google's models (when enabled)
+
+See individual provider documentation for configuration details.
+
+## Error Handling
+
+```rust
+pub enum LLMError {
+    ApiError { code: Option<String>, message: String },
+    NetworkError(String),
+    Timeout(String),
+    RateLimited(String),
+    QuotaExceeded(String),
+    ModelNotFound(String),
+    ContextLengthExceeded(String),
+    ContentFiltered(String),
+    ConfigError(String),
+    SerializationError(String),
+    Other(String),
+}
+
+pub type LLMResult<T> = Result<T, LLMError>;
+```
+
+## Best Practices
+
+1. **Thread Safety**: All providers must be `Send + Sync` for concurrent usage
+2. **Error Categorization**: Map provider-specific errors to appropriate `LLMError` variants
+3. **Timeout Handling**: Implement reasonable timeouts for API calls
+4. **Retry Logic**: Consider implementing retry logic for transient failures
+5. **Capability Detection**: Accurately report supported capabilities
+6. **Resource Cleanup**: Properly handle connection pooling and cleanup
+
+## Related Types
+
+- [LLMClient](/api/llm-client) - High-level client for using providers
+- [ChatCompletionRequest](/api/types#chatcompletionrequest) - Request format
+- [ChatCompletionResponse](/api/types#chatcompletionresponse) - Response format
+- [Tool](/api/types#tool) - Tool/function calling definitions

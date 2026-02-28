@@ -1,0 +1,342 @@
+---
+title: "CLI Overview"
+description: "Command-line interface for building and managing MoFA AI agents"
+icon: "terminal"
+---
+
+The MoFA CLI is a powerful command-line tool for creating, managing, and deploying AI agents. It provides a complete set of commands for project scaffolding, agent lifecycle management, configuration, and more.
+
+## Installation
+
+<CodeGroup>
+
+```bash Install from crates.io
+cargo install mofa-cli
+```
+
+```bash Install from source
+# Clone the repository
+git clone https://github.com/moxin-org/mofa.git
+cd mofa
+
+# Install from workspace
+cargo install --path crates/mofa-cli
+```
+
+```bash Development installation
+# Run directly without installing
+cargo run -p mofa-cli -- --help
+```
+
+</CodeGroup>
+
+### Verify Installation
+
+```bash
+mofa --version
+```
+
+## Quick Start
+
+```bash
+# Create a new agent project
+mofa new my-agent
+
+cd my-agent
+
+# Set up your API key
+export OPENAI_API_KEY="sk-..."
+
+# Run the agent
+cargo run
+```
+
+## Command Structure
+
+The MoFA CLI follows a hierarchical command structure:
+
+```
+mofa [GLOBAL_FLAGS] <COMMAND> [SUBCOMMAND] [OPTIONS] [ARGS]
+```
+
+### Global Flags
+
+| Flag | Description | Default |
+|------|-------------|----------|
+| `-v, --verbose` | Enable verbose output | `false` |
+| `--output-format <FORMAT>` | Output format (text, json, table) | `text` |
+| `-c, --config <PATH>` | Configuration file path | - |
+| `--tui` | Launch Terminal UI mode | `false` |
+| `-h, --help` | Print help information | - |
+| `-V, --version` | Print version information | - |
+
+## Available Commands
+
+<CardGroup cols={2}>
+
+<Card title="mofa new" icon="plus" href="/cli/new">
+  Create a new agent project from templates
+</Card>
+
+<Card title="mofa agent" icon="robot" href="/cli/agent">
+  Manage agent lifecycle (start, stop, list, status)
+</Card>
+
+<Card title="mofa plugin" icon="puzzle-piece" href="/cli/plugin">
+  Install and manage plugins
+</Card>
+
+<Card title="mofa session" icon="clock-rotate-left" href="/cli/session">
+  View and manage agent sessions
+</Card>
+
+<Card title="mofa config" icon="gear" href="/cli/config">
+  Manage global configuration
+</Card>
+
+<Card title="mofa db" icon="database" href="/cli/db">
+  Database initialization and migrations
+</Card>
+
+</CardGroup>
+
+## Terminal UI Mode
+
+Launch the interactive Terminal User Interface:
+
+```bash
+# Launch TUI
+mofa --tui
+
+# Or simply run without arguments
+mofa
+```
+
+The TUI provides:
+- Interactive agent management
+- Real-time status monitoring
+- Session browsing
+- Plugin discovery
+
+## Environment Variables
+
+### OpenAI Configuration
+
+```bash
+export OPENAI_API_KEY="sk-your-api-key-here"
+export OPENAI_BASE_URL="https://api.openai.com/v1"  # Optional
+export OPENAI_MODEL="gpt-4o"  # Optional, default: gpt-4o
+```
+
+### MoFA Configuration
+
+```bash
+export MOFA_CONFIG_DIR="~/.config/mofa"  # Configuration directory
+export MOFA_DATA_DIR="~/.local/share/mofa"  # Data storage directory
+export RUST_LOG="info,mofa=debug"  # Logging level
+```
+
+## Configuration Files
+
+The CLI looks for configuration files in the following locations (in order):
+
+1. Path specified by `--config` flag
+2. `./agent.yml` (current directory)
+3. `./agent.yaml`
+4. `./agent.toml`
+5. `./agent.json`
+6. `~/.config/mofa/config.yml`
+
+### Supported Formats
+
+- **YAML**: `.yml`, `.yaml` (recommended)
+- **TOML**: `.toml`
+- **JSON**: `.json`, `.json5`
+- **INI**: `.ini`
+- **RON**: `.ron`
+
+## Exit Codes
+
+| Code | Description |
+|------|-------------|
+| `0` | Success |
+| `1` | General error |
+| `2` | Configuration error |
+| `3` | Agent not found |
+| `4` | Agent already running |
+| `5` | Database connection error |
+| `101` | Network error |
+
+## Shell Completion
+
+Generate shell completion scripts:
+
+<CodeGroup>
+
+```bash Bash
+mofa completions bash > ~/.local/share/bash-completion/completions/mofa
+```
+
+```bash Zsh
+mofa completions zsh > ~/.zfunc/_mofa
+```
+
+```bash Fish
+mofa completions fish > ~/.config/fish/completions/mofa.fish
+```
+
+```bash PowerShell
+mofa completions powershell > $PROFILE
+```
+
+</CodeGroup>
+
+<Note>
+  Shell completion generation requires building with the `clap_complete` feature.
+</Note>
+
+## Output Formats
+
+Most commands support multiple output formats:
+
+### Text Format (Default)
+
+```bash
+mofa agent list
+```
+
+```
+→ Listing agents
+
+┌────────────┬─────────────┬─────────┬────────┐
+│ id         │ name        │ status  │ uptime │
+├────────────┼─────────────┼─────────┼────────┤
+│ agent-001  │ My Agent    │ Running │ 2h 15m │
+└────────────┴─────────────┴─────────┴────────┘
+
+Total: 1 agent(s)
+```
+
+### JSON Format
+
+```bash
+mofa agent list --output-format json
+```
+
+```json
+[
+  {
+    "id": "agent-001",
+    "name": "My Agent",
+    "status": "Running",
+    "uptime": "2h 15m"
+  }
+]
+```
+
+### Table Format
+
+```bash
+mofa agent list --output-format table
+```
+
+Produces a formatted table optimized for terminal display.
+
+## Debugging
+
+Enable verbose logging:
+
+```bash
+# Enable verbose mode
+mofa --verbose agent start my-agent
+
+# Or use environment variable
+export RUST_LOG=debug
+mofa agent start my-agent
+```
+
+## Common Workflows
+
+### Creating and Starting an Agent
+
+```bash
+# Create new project
+mofa new my-agent
+cd my-agent
+
+# Set up environment
+export OPENAI_API_KEY="sk-..."
+
+# Build and run
+cargo run
+```
+
+### Managing Running Agents
+
+```bash
+# List all agents
+mofa agent list
+
+# Check specific agent status
+mofa agent status my-agent
+
+# View logs
+mofa agent logs my-agent --tail
+
+# Stop agent
+mofa agent stop my-agent
+```
+
+### Session Management
+
+```bash
+# List all sessions
+mofa session list
+
+# Filter by agent
+mofa session list --agent my-agent
+
+# Show session details
+mofa session show session-123
+
+# Export session
+mofa session export session-123 -o session.json --format json
+```
+
+## Getting Help
+
+Get help for any command:
+
+```bash
+# General help
+mofa --help
+
+# Command-specific help
+mofa agent --help
+mofa agent start --help
+
+# Show version
+mofa --version
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Create Projects" icon="plus" href="/cli/new">
+  Learn about project templates and scaffolding
+</Card>
+
+<Card title="Manage Agents" icon="robot" href="/cli/agent">
+  Start, stop, and monitor agents
+</Card>
+
+<Card title="Configuration" icon="gear" href="/cli/config">
+  Configure MoFA settings
+</Card>
+
+<Card title="Examples" icon="code" href="/examples">
+  Explore example projects
+</Card>
+
+</CardGroup>

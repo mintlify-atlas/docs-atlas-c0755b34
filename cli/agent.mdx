@@ -1,0 +1,776 @@
+---
+title: "mofa agent"
+description: "Manage agent lifecycle and monitor status"
+icon: "robot"
+---
+
+The `mofa agent` command provides comprehensive agent lifecycle management including starting, stopping, restarting, and monitoring agents.
+
+## Subcommands
+
+<CardGroup cols={2}>
+
+<Card title="start" icon="play">
+  Start an agent
+</Card>
+
+<Card title="stop" icon="stop">
+  Stop a running agent
+</Card>
+
+<Card title="restart" icon="rotate-right">
+  Restart an agent
+</Card>
+
+<Card title="status" icon="chart-line">
+  Show agent status
+</Card>
+
+<Card title="list" icon="list">
+  List all agents
+</Card>
+
+<Card title="logs" icon="file-lines">
+  View agent logs
+</Card>
+
+<Card title="create" icon="wand-magic-sparkles">
+  Create agent interactively
+</Card>
+
+</CardGroup>
+
+## mofa agent start
+
+Start an agent and register it in the runtime.
+
+### Usage
+
+```bash
+mofa agent start <AGENT_ID> [OPTIONS]
+```
+
+### Arguments
+
+#### `<AGENT_ID>`
+
+**Required.** Unique identifier for the agent.
+
+```bash
+mofa agent start my-agent
+```
+
+### Options
+
+#### `-c, --config <PATH>`
+
+Path to agent configuration file.
+
+- **Type:** Path
+- **Default:** Auto-discovered (looks for `agent.yml`, `agent.yaml`, etc.)
+
+```bash
+mofa agent start my-agent --config ./config/agent.yml
+```
+
+#### `--type <FACTORY_TYPE>`
+
+Agent factory type to use for creation.
+
+- **Type:** String
+- **Default:** First available factory
+
+Use `mofa agent status` to see available factory types.
+
+```bash
+mofa agent start my-agent --type llm-agent
+```
+
+#### `--daemon`
+
+Run agent as a background daemon.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa agent start my-agent --daemon
+```
+
+### Examples
+
+#### Start with default configuration
+
+```bash
+mofa agent start my-agent
+```
+
+**Output:**
+
+```
+→ Starting agent: my-agent
+  Config: ./agent.yml (auto-discovered)
+  Factory: llm-agent
+✓ Agent 'my-agent' started successfully
+```
+
+#### Start with specific config
+
+```bash
+mofa agent start my-agent --config production.yml
+```
+
+**Output:**
+
+```
+→ Starting agent: my-agent
+  Config: production.yml
+  Factory: llm-agent
+✓ Agent 'my-agent' started successfully
+```
+
+#### Start as daemon
+
+```bash
+mofa agent start my-agent --daemon
+```
+
+**Output:**
+
+```
+→ Starting agent: my-agent
+  Mode: daemon
+  Config: ./agent.yml (auto-discovered)
+  Factory: llm-agent
+✓ Agent 'my-agent' started successfully
+```
+
+### Error Codes
+
+| Code | Description |
+|------|-------------|
+| `0` | Agent started successfully |
+| `1` | Agent already running |
+| `2` | Configuration not found or invalid |
+| `3` | No factory available |
+| `4` | Factory type not found |
+
+---
+
+## mofa agent stop
+
+Stop a running agent gracefully.
+
+### Usage
+
+```bash
+mofa agent stop <AGENT_ID> [OPTIONS]
+```
+
+### Arguments
+
+#### `<AGENT_ID>`
+
+**Required.** ID of the agent to stop.
+
+```bash
+mofa agent stop my-agent
+```
+
+### Options
+
+#### `--force-persisted-stop`
+
+Update persisted state even when runtime registry is unavailable.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+Useful when CLI commands run in separate processes and the runtime registry state is not available.
+
+```bash
+mofa agent stop my-agent --force-persisted-stop
+```
+
+### Examples
+
+#### Normal stop
+
+```bash
+mofa agent stop my-agent
+```
+
+**Output:**
+
+```
+→ Stopping agent: my-agent
+✓ Agent 'my-agent' stopped and unregistered
+✓ Agent 'my-agent' stopped
+```
+
+#### Force persisted stop
+
+```bash
+mofa agent stop my-agent --force-persisted-stop
+```
+
+**Output:**
+
+```
+→ Stopping agent: my-agent
+✓ Agent 'my-agent' persisted state updated to Stopped
+```
+
+### Graceful Shutdown
+
+The stop command:
+1. Attempts graceful shutdown via agent instance
+2. Updates persisted state to "Stopped"
+3. Unregisters agent from runtime registry
+4. Rolls back on failure
+
+### Error Codes
+
+| Code | Description |
+|------|-------------|
+| `0` | Agent stopped successfully |
+| `1` | Agent not found |
+| `2` | Agent not running |
+| `3` | Failed to unregister |
+
+---
+
+## mofa agent restart
+
+Restart an agent (stop and start).
+
+### Usage
+
+```bash
+mofa agent restart <AGENT_ID> [OPTIONS]
+```
+
+### Arguments
+
+#### `<AGENT_ID>`
+
+**Required.** ID of the agent to restart.
+
+```bash
+mofa agent restart my-agent
+```
+
+### Options
+
+#### `-c, --config <PATH>`
+
+Path to agent configuration file.
+
+- **Type:** Path
+- **Default:** Auto-discovered or previously used config
+
+```bash
+mofa agent restart my-agent --config updated-config.yml
+```
+
+### Examples
+
+```bash
+mofa agent restart my-agent
+```
+
+**Output:**
+
+```
+→ Stopping agent: my-agent
+✓ Agent 'my-agent' stopped
+→ Starting agent: my-agent
+✓ Agent 'my-agent' started successfully
+```
+
+---
+
+## mofa agent status
+
+Show detailed status information for agents.
+
+### Usage
+
+```bash
+mofa agent status [AGENT_ID]
+```
+
+### Arguments
+
+#### `[AGENT_ID]`
+
+**Optional.** Specific agent ID. If omitted, shows all agents.
+
+```bash
+# Show specific agent
+mofa agent status my-agent
+
+# Show all agents
+mofa agent status
+```
+
+### Examples
+
+#### Show specific agent status
+
+```bash
+mofa agent status my-agent
+```
+
+**Output:**
+
+```
+Agent: my-agent
+Name: My Agent
+Status: Running
+Uptime: 2h 15m
+Factory: llm-agent
+Provider: OpenAI
+Model: gpt-4o
+
+Available Factory Types:
+  - llm-agent
+  - react-agent
+  - secretary-agent
+```
+
+#### Show all agents
+
+```bash
+mofa agent status
+```
+
+**Output:**
+
+```
+Registered Agents:
+
+  my-agent (Running)
+  Name: My Agent
+  Uptime: 2h 15m
+
+  assistant-bot (Running)
+  Name: Assistant Bot
+  Uptime: 45m
+
+Available Factory Types:
+  - llm-agent
+  - react-agent
+  - secretary-agent
+
+Total: 2 agent(s)
+```
+
+---
+
+## mofa agent list
+
+List all registered agents with their status.
+
+### Usage
+
+```bash
+mofa agent list [OPTIONS]
+```
+
+### Options
+
+#### `--running`
+
+Show only running agents.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa agent list --running
+```
+
+#### `--all`
+
+Show all agents including stopped ones.
+
+- **Type:** Boolean flag
+- **Default:** `true`
+
+```bash
+mofa agent list --all
+```
+
+### Examples
+
+#### List all agents
+
+```bash
+mofa agent list
+```
+
+**Output:**
+
+```
+→ Listing agents
+
+┌────────────┬──────────────┬──────────┬─────────┬──────────┐
+│ id         │ name          │ status   │ uptime  │ provider │
+├────────────┼──────────────┼──────────┼─────────┼──────────┤
+│ agent-001  │ My Agent      │ Running  │ 2h 15m  │ OpenAI   │
+│ agent-002  │ Assistant Bot │ Running  │  45m     │ OpenAI   │
+│ agent-003  │ Old Agent     │ Stopped  │ -       │ -        │
+└────────────┴──────────────┴──────────┴─────────┴──────────┘
+
+Total: 3 agent(s)
+```
+
+#### List only running agents
+
+```bash
+mofa agent list --running
+```
+
+**Output:**
+
+```
+→ Listing agents
+
+┌────────────┬──────────────┬──────────┬─────────┐
+│ id         │ name          │ status   │ uptime  │
+├────────────┼──────────────┼──────────┼─────────┤
+│ agent-001  │ My Agent      │ Running  │ 2h 15m  │
+│ agent-002  │ Assistant Bot │ Running  │  45m     │
+└────────────┴──────────────┴──────────┴─────────┘
+
+Total: 2 agent(s)
+```
+
+#### JSON output
+
+```bash
+mofa agent list --output-format json
+```
+
+**Output:**
+
+```json
+[
+  {
+    "id": "agent-001",
+    "name": "My Agent",
+    "status": "Running",
+    "uptime": "2h 15m",
+    "provider": "OpenAI",
+    "model": "gpt-4o"
+  },
+  {
+    "id": "agent-002",
+    "name": "Assistant Bot",
+    "status": "Running",
+    "uptime": "45m",
+    "provider": "OpenAI"
+  }
+]
+```
+
+---
+
+## mofa agent logs
+
+View and tail agent logs.
+
+### Usage
+
+```bash
+mofa agent logs <AGENT_ID> [OPTIONS]
+```
+
+### Arguments
+
+#### `<AGENT_ID>`
+
+**Required.** ID of the agent to view logs for.
+
+```bash
+mofa agent logs my-agent
+```
+
+### Options
+
+#### `-t, --tail`
+
+Tail the logs (follow in real-time).
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa agent logs my-agent --tail
+```
+
+#### `--level <LEVEL>`
+
+Filter by log level.
+
+- **Type:** String
+- **Values:** `INFO`, `DEBUG`, `ERROR`, `WARN`
+- **Default:** Show all levels
+
+```bash
+mofa agent logs my-agent --level ERROR
+```
+
+#### `--grep <PATTERN>`
+
+Search for text pattern in logs.
+
+- **Type:** String
+- **Default:** None
+
+```bash
+mofa agent logs my-agent --grep "failed"
+```
+
+#### `--limit <N>`
+
+Limit number of lines to display.
+
+- **Type:** Integer
+- **Default:** All lines
+
+```bash
+mofa agent logs my-agent --limit 100
+```
+
+#### `--json`
+
+Output logs as JSON.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa agent logs my-agent --json
+```
+
+### Examples
+
+#### View recent logs
+
+```bash
+mofa agent logs my-agent
+```
+
+**Output:**
+
+```
+[2024-02-28 10:15:23] INFO  Agent started
+[2024-02-28 10:15:24] DEBUG Initializing provider
+[2024-02-28 10:15:25] INFO  Ready to accept requests
+[2024-02-28 10:16:30] DEBUG Processing message: Hello
+[2024-02-28 10:16:32] INFO  Response sent
+```
+
+#### Tail logs in real-time
+
+```bash
+mofa agent logs my-agent --tail
+```
+
+**Output:**
+
+```
+Tailing logs for agent 'my-agent' (Ctrl+C to stop)...
+
+[2024-02-28 10:20:15] INFO  New message received
+[2024-02-28 10:20:16] DEBUG Calling LLM provider
+[2024-02-28 10:20:18] INFO  Response generated
+```
+
+#### Filter by error level
+
+```bash
+mofa agent logs my-agent --level ERROR
+```
+
+**Output:**
+
+```
+[2024-02-28 10:18:45] ERROR Failed to connect to database
+[2024-02-28 10:19:12] ERROR API rate limit exceeded
+```
+
+#### Search logs
+
+```bash
+mofa agent logs my-agent --grep "timeout"
+```
+
+**Output:**
+
+```
+[2024-02-28 10:17:30] WARN  Request timeout after 30s
+[2024-02-28 10:19:45] ERROR Connection timeout
+```
+
+#### Limit output
+
+```bash
+mofa agent logs my-agent --limit 10
+```
+
+Shows only the last 10 log entries.
+
+#### JSON format
+
+```bash
+mofa agent logs my-agent --json
+```
+
+**Output:**
+
+```json
+[
+  {
+    "timestamp": "2024-02-28T10:15:23Z",
+    "level": "INFO",
+    "message": "Agent started"
+  },
+  {
+    "timestamp": "2024-02-28T10:15:24Z",
+    "level": "DEBUG",
+    "message": "Initializing provider"
+  }
+]
+```
+
+---
+
+## mofa agent create
+
+Interactive wizard to create a new agent configuration.
+
+### Usage
+
+```bash
+mofa agent create [OPTIONS]
+```
+
+### Options
+
+#### `--non-interactive`
+
+Run in non-interactive mode with defaults.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa agent create --non-interactive
+```
+
+#### `-c, --config <PATH>`
+
+Output configuration file path.
+
+- **Type:** Path
+- **Default:** `./agent.yml`
+
+```bash
+mofa agent create --config custom-agent.yml
+```
+
+### Examples
+
+#### Interactive creation
+
+```bash
+mofa agent create
+```
+
+**Output:**
+
+```
+Agent Configuration Wizard
+
+Agent ID: my-agent
+Agent Name: My Agent
+Description: A helpful assistant
+
+LLM Provider:
+  1) OpenAI
+  2) Ollama
+  3) Azure
+Select provider: 1
+
+Model: gpt-4o
+Temperature (0.0-2.0): 0.7
+Max Tokens: 4096
+
+System Prompt:
+> You are a helpful AI assistant.
+
+✓ Configuration saved to agent.yml
+```
+
+## Common Workflows
+
+### Start and monitor agent
+
+```bash
+# Start agent
+mofa agent start my-agent
+
+# Check status
+mofa agent status my-agent
+
+# Tail logs
+mofa agent logs my-agent --tail
+```
+
+### Restart with new configuration
+
+```bash
+# Edit configuration
+vim agent.yml
+
+# Restart agent
+mofa agent restart my-agent --config agent.yml
+```
+
+### Troubleshooting
+
+```bash
+# Check if agent is running
+mofa agent status my-agent
+
+# View error logs
+mofa agent logs my-agent --level ERROR
+
+# Stop and restart
+mofa agent stop my-agent
+mofa agent start my-agent --verbose
+```
+
+## Agent States
+
+Agents can be in the following states:
+
+| State | Description |
+|-------|-------------|
+| `Running` | Agent is active and processing requests |
+| `Ready` | Agent is initialized and ready |
+| `Stopped` | Agent has been stopped |
+| `Initializing` | Agent is starting up |
+| `Executing` | Agent is processing a task |
+| `Paused` | Agent is temporarily paused |
+| `Error` | Agent encountered an error |
+
+## See Also
+
+- [Configuration](/cli/config) - Manage configuration
+- [Sessions](/cli/session) - View agent sessions
+- [Plugins](/cli/plugin) - Install plugins
+- [Logs](/cli/agent#mofa-agent-logs) - View detailed logs

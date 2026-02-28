@@ -1,0 +1,544 @@
+---
+title: "mofa plugin"
+description: "Install and manage MoFA plugins"
+icon: "puzzle-piece"
+---
+
+The `mofa plugin` command provides plugin management including installation, listing, and repository configuration.
+
+## Subcommands
+
+<CardGroup cols={2}>
+
+<Card title="list" icon="list">
+  List installed or available plugins
+</Card>
+
+<Card title="info" icon="circle-info">
+  Show plugin details
+</Card>
+
+<Card title="install" icon="download">
+  Install a plugin
+</Card>
+
+<Card title="uninstall" icon="trash">
+  Uninstall a plugin
+</Card>
+
+<Card title="repository" icon="book">
+  Manage plugin repositories
+</Card>
+
+</CardGroup>
+
+## mofa plugin list
+
+List installed or available plugins.
+
+### Usage
+
+```bash
+mofa plugin list [OPTIONS]
+```
+
+### Options
+
+#### `--installed`
+
+Show only installed plugins.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa plugin list --installed
+```
+
+#### `--available`
+
+Show available plugins from catalog.
+
+- **Type:** Boolean flag  
+- **Default:** `false`
+
+```bash
+mofa plugin list --available
+```
+
+<Note>
+  If neither flag is specified, shows installed plugins by default.
+</Note>
+
+### Examples
+
+#### List installed plugins
+
+```bash
+mofa plugin list --installed
+```
+
+**Output:**
+
+```
+→ Installed plugins
+
+┌───────────────┬────────┬────────┬──────────────────────────────┐
+│ ID            │ Kind   │ Repo   │ Description              │
+├───────────────┼────────┼────────┼──────────────────────────────┤
+│ web-search    │ tool   │ official │ Web search capability    │
+│ code-exec     │ tool   │ official │ Code execution sandbox   │
+│ memory-redis  │ memory │ official │ Redis-backed memory      │
+└───────────────┴────────┴────────┴──────────────────────────────┘
+```
+
+#### List available plugins
+
+```bash
+mofa plugin list --available
+```
+
+**Output:**
+
+```
+→ Available plugin catalog
+
+┌───────────────┬────────────────┬──────────┬────────┬──────────────────────────────┬───────────┐
+│ ID            │ Name           │ Repo     │ Kind   │ Description              │ Installed │
+├───────────────┼────────────────┼──────────┼────────┼──────────────────────────────┼───────────┤
+│ web-search    │ Web Search     │ official │ tool   │ Web search capability    │ yes       │
+│ code-exec     │ Code Executor  │ official │ tool   │ Code execution sandbox   │ yes       │
+│ pdf-reader    │ PDF Reader     │ official │ tool   │ Extract text from PDFs   │ no        │
+│ memory-redis  │ Redis Memory   │ official │ memory │ Redis-backed memory      │ yes       │
+└───────────────┴────────────────┴──────────┴────────┴──────────────────────────────┴───────────┘
+```
+
+---
+
+## mofa plugin info
+
+Show detailed information about a plugin.
+
+### Usage
+
+```bash
+mofa plugin info <NAME>
+```
+
+### Arguments
+
+#### `<NAME>`
+
+**Required.** Plugin name or ID.
+
+```bash
+mofa plugin info web-search
+```
+
+### Examples
+
+```bash
+mofa plugin info web-search
+```
+
+**Output:**
+
+```
+Plugin: web-search
+Name: Web Search
+Kind: tool
+Repository: official
+Version: 1.0.0
+Installed: yes
+
+Description:
+  Provides web search capability using multiple search engines
+  (Google, Bing, DuckDuckGo).
+
+Capabilities:
+  - Search the web for information
+  - Extract page content
+  - Follow search result links
+
+Configuration:
+  search_engine: google
+  max_results: 10
+  timeout_seconds: 30
+
+Dependencies:
+  - reqwest
+  - scraper
+  - tokio
+```
+
+---
+
+## mofa plugin install
+
+Install a plugin from a repository, local path, or URL.
+
+### Usage
+
+```bash
+mofa plugin install <NAME> [OPTIONS]
+```
+
+### Arguments
+
+#### `<NAME>`
+
+**Required.** Plugin name, path, or URL.
+
+```bash
+# Install from catalog
+mofa plugin install web-search
+
+# Install from local path
+mofa plugin install ./my-plugin
+
+# Install from URL
+mofa plugin install https://github.com/user/plugin
+```
+
+### Options
+
+#### `--checksum <HASH>`
+
+Expected SHA256 checksum for verification.
+
+- **Type:** String (hex)
+- **Default:** None (skip verification)
+
+```bash
+mofa plugin install web-search --checksum abc123...
+```
+
+#### `--verify-signature`
+
+Verify plugin signature if available.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa plugin install web-search --verify-signature
+```
+
+### Examples
+
+#### Install from catalog
+
+```bash
+mofa plugin install web-search
+```
+
+**Output:**
+
+```
+→ Installing plugin: web-search
+  Repository: official
+  Downloading...
+  ✓ Downloaded (1.2 MB)
+  Extracting...
+  Registering...
+✓ Plugin 'web-search' installed successfully
+```
+
+#### Install with checksum verification
+
+```bash
+mofa plugin install web-search \
+  --checksum abc123def456...
+```
+
+**Output:**
+
+```
+→ Installing plugin: web-search
+  Repository: official
+  Downloading...
+  Verifying checksum...
+  ✓ Checksum verified
+  Extracting...
+  Registering...
+✓ Plugin 'web-search' installed successfully
+```
+
+#### Install from local path
+
+```bash
+mofa plugin install ./my-custom-plugin
+```
+
+**Output:**
+
+```
+→ Installing plugin from local path: ./my-custom-plugin
+  Loading plugin manifest...
+  Validating...
+  Registering...
+✓ Plugin 'my-custom-plugin' installed successfully
+```
+
+### Error Codes
+
+| Code | Description |
+|------|-------------|
+| `0` | Plugin installed successfully |
+| `1` | Plugin not found |
+| `2` | Checksum mismatch |
+| `3` | Invalid plugin format |
+| `4` | Network error |
+
+---
+
+## mofa plugin uninstall
+
+Uninstall a plugin.
+
+### Usage
+
+```bash
+mofa plugin uninstall <NAME> [OPTIONS]
+```
+
+### Arguments
+
+#### `<NAME>`
+
+**Required.** Plugin name or ID to uninstall.
+
+```bash
+mofa plugin uninstall web-search
+```
+
+### Options
+
+#### `--force`
+
+Skip confirmation prompt.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa plugin uninstall web-search --force
+```
+
+### Examples
+
+#### Interactive uninstall
+
+```bash
+mofa plugin uninstall web-search
+```
+
+**Output:**
+
+```
+→ Uninstalling plugin: web-search
+
+Warning: This will remove the plugin and its data.
+Continue? [y/N]: y
+
+  Removing plugin files...
+  Unregistering...
+✓ Plugin 'web-search' uninstalled successfully
+```
+
+#### Force uninstall
+
+```bash
+mofa plugin uninstall web-search --force
+```
+
+**Output:**
+
+```
+→ Uninstalling plugin: web-search
+  Removing plugin files...
+  Unregistering...
+✓ Plugin 'web-search' uninstalled successfully
+```
+
+---
+
+## mofa plugin repository
+
+Manage plugin repositories.
+
+### Subcommands
+
+#### `list`
+
+List configured repositories.
+
+```bash
+mofa plugin repository list
+```
+
+**Output:**
+
+```
+Configured Plugin Repositories:
+
+  official
+  URL: https://plugins.mofa.dev/registry
+  Description: Official MoFA plugin repository
+
+  community
+  URL: https://github.com/mofa-community/plugins
+  Description: Community-maintained plugins
+
+Total: 2 repositories
+```
+
+#### `add`
+
+Add a new repository.
+
+```bash
+mofa plugin repository add <ID> <URL> [OPTIONS]
+```
+
+**Arguments:**
+
+- `<ID>` - Repository identifier (required)
+- `<URL>` - Repository URL (required)
+
+**Options:**
+
+- `-d, --description <TEXT>` - Repository description
+
+**Examples:**
+
+```bash
+mofa plugin repository add my-repo \
+  https://github.com/user/plugins \
+  --description "My custom plugins"
+```
+
+**Output:**
+
+```
+→ Adding plugin repository: my-repo
+  URL: https://github.com/user/plugins
+  Description: My custom plugins
+  Fetching repository metadata...
+✓ Repository 'my-repo' added successfully
+```
+
+## Plugin Types
+
+MoFA supports several plugin types:
+
+### Tool Plugins
+
+Extend agent capabilities with new tools.
+
+**Examples:**
+- `web-search` - Web search capability
+- `code-exec` - Code execution
+- `pdf-reader` - PDF text extraction
+- `image-gen` - Image generation
+
+### Memory Plugins
+
+Provide different memory backends.
+
+**Examples:**
+- `memory-redis` - Redis-backed memory
+- `memory-postgres` - PostgreSQL memory
+- `memory-vector` - Vector database memory
+
+### Reasoner Plugins
+
+Implement reasoning strategies.
+
+**Examples:**
+- `react-reasoner` - ReAct pattern reasoning
+- `cot-reasoner` - Chain-of-thought reasoning
+- `tree-of-thought` - Tree exploration reasoning
+
+### Coordinator Plugins
+
+Multi-agent coordination patterns.
+
+**Examples:**
+- `sequential-coordinator` - Sequential execution
+- `parallel-coordinator` - Parallel execution  
+- `debate-coordinator` - Multi-agent debate
+
+## Plugin Security
+
+<Warning>
+  Always verify plugins from untrusted sources. Plugins have full access to your system.
+</Warning>
+
+### Best Practices
+
+1. **Use checksums** - Always verify checksums for downloaded plugins
+2. **Official repository** - Prefer plugins from the official repository
+3. **Review source** - Review plugin source code before installation
+4. **Least privilege** - Only install plugins you need
+5. **Keep updated** - Regularly update installed plugins
+
+### Verification
+
+```bash
+# Verify checksum
+mofa plugin install plugin-name \
+  --checksum abc123...
+
+# Verify signature
+mofa plugin install plugin-name \
+  --verify-signature
+```
+
+## Common Workflows
+
+### Discover and install plugins
+
+```bash
+# Browse available plugins
+mofa plugin list --available
+
+# Get plugin details
+mofa plugin info web-search
+
+# Install plugin
+mofa plugin install web-search
+```
+
+### Manage installed plugins
+
+```bash
+# List installed
+mofa plugin list --installed
+
+# Check plugin info
+mofa plugin info web-search
+
+# Uninstall
+mofa plugin uninstall web-search
+```
+
+### Add custom repository
+
+```bash
+# Add repository
+mofa plugin repository add my-repo \
+  https://github.com/user/plugins
+
+# List plugins from new repo
+mofa plugin list --available
+
+# Install from custom repo
+mofa plugin install my-plugin
+```
+
+## See Also
+
+- [Plugin Development](/plugins) - Create custom plugins
+- [Agent Configuration](/cli/agent) - Configure agent plugins
+- [Tool System](/concepts/tools) - Tool integration guide

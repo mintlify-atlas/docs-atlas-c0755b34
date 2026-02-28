@@ -1,122 +1,208 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "MoFA",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#FF6B35",
+    "light": "#FFB88C",
+    "dark": "#D45A2A"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/mofa-org/mofa"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/mofa-org/mofa",
+      "discord": "https://discord.com/invite/hKJZzDMMm9"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/microkernel",
+              "concepts/dual-layer-plugins",
+              "concepts/agent-coordination",
+              "concepts/workflow-engine"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Building Agents",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/your-first-agent",
+              "guides/llm-integration",
+              "guides/agent-lifecycle",
+              "guides/capabilities-and-state"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Plugin Development",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "plugins/overview",
+              "plugins/compile-time-plugins",
+              "plugins/runtime-plugins",
+              "plugins/rhai-scripting",
+              "plugins/wasm-plugins"
+            ]
+          },
+          {
+            "group": "Multi-Agent Systems",
+            "pages": [
+              "multi-agent/collaboration-patterns",
+              "multi-agent/request-response",
+              "multi-agent/pub-sub",
+              "multi-agent/consensus",
+              "multi-agent/debate",
+              "multi-agent/parallel-sequential",
+              "multi-agent/secretary-pattern"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/workflow-orchestration",
+              "advanced/persistence",
+              "advanced/monitoring",
+              "advanced/distributed-runtime",
+              "advanced/security"
+            ]
+          },
+          {
+            "group": "Language Bindings",
+            "pages": [
+              "bindings/overview",
+              "bindings/python",
+              "bindings/java",
+              "bindings/kotlin",
+              "bindings/swift",
+              "bindings/go"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core API",
             "pages": [
-              "api-reference/introduction"
+              "api/mofa-agent",
+              "api/agent-input-output",
+              "api/agent-context",
+              "api/agent-capabilities",
+              "api/agent-lifecycle"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "LLM Integration",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/llm-provider",
+              "api/llm-client",
+              "api/openai-provider",
+              "api/anthropic-provider",
+              "api/ollama-provider"
+            ]
+          },
+          {
+            "group": "Agent Patterns",
+            "pages": [
+              "api/react-agent",
+              "api/secretary-agent",
+              "api/coordination-protocols"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "api/plugin-trait",
+              "api/tool-plugin",
+              "api/llm-plugin",
+              "api/storage-plugin",
+              "api/rhai-plugin"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "api/agent-builder",
+              "api/agent-runtime",
+              "api/simple-runtime",
+              "api/message-bus"
+            ]
+          },
+          {
+            "group": "Workflow",
+            "pages": [
+              "api/state-graph",
+              "api/workflow-nodes",
+              "api/workflow-dsl"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/new",
+              "cli/agent",
+              "cli/plugin",
+              "cli/session",
+              "cli/config",
+              "cli/db"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Basic Examples",
+            "pages": [
+              "examples/hello-world",
+              "examples/chat-stream",
+              "examples/react-agent"
+            ]
+          },
+          {
+            "group": "Advanced Examples",
+            "pages": [
+              "examples/multi-agent-coordination",
+              "examples/secretary-agent",
+              "examples/workflow-orchestration",
+              "examples/rhai-hot-reload",
+              "examples/wasm-plugin"
+            ]
+          },
+          {
+            "group": "Domain-Specific",
+            "pages": [
+              "examples/financial-compliance",
+              "examples/medical-diagnosis"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

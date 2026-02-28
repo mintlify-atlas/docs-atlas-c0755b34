@@ -1,0 +1,420 @@
+---
+title: 'AgentLifecycle Trait'
+description: 'Optional lifecycle extension for pause/resume control'
+icon: 'circle-play'
+---
+
+# AgentLifecycle Trait
+
+The `AgentLifecycle` trait provides optional lifecycle control methods for agents that need fine-grained execution management. It extends the core `MoFAAgent` trait with pause and resume capabilities.
+
+Location: `mofa-kernel/src/agent/core.rs:329`
+
+## Trait Definition
+
+```rust
+#[async_trait]
+pub trait AgentLifecycle: MoFAAgent {
+    async fn pause(&mut self) -> AgentResult<()>;
+    async fn resume(&mut self) -> AgentResult<()>;
+}
+```
+
+## Design Philosophy
+
+The `AgentLifecycle` trait is **optional** and follows the microkernel principle of separating core from extensions:
+
+- **Core functionality** is in `MoFAAgent` (initialize, execute, shutdown)
+- **Optional functionality** is in extension traits like `AgentLifecycle`
+- Only implement this trait if your agent needs pause/resume control
+
+<Note>
+Not all agents need pause/resume functionality. Only implement `AgentLifecycle` when your use case requires it (e.g., long-running tasks, user-controlled execution, resource management).
+</Note>
+
+## Required Methods
+
+### pause
+
+```rust
+async fn pause(&mut self) -> AgentResult<()>
+```
+
+Pauses the current execution, preserving state for later resumption.
+
+**State Transition:** `Executing → Paused`
+
+**Use Cases:**
+- Long-running tasks that need user-controlled pausing
+- Resource management (temporarily release resources)
+- Debugging and inspection
+- Graceful handling of system events
+
+**Example:**
+```rust
+use mofa_sdk::kernel::{AgentLifecycle, AgentResult, AgentState};
+use async_trait::async_trait;
+
+struct MyAgent {
+    state: AgentState,
+    // Agent state fields...
+}
+
+#[async_trait]
+impl AgentLifecycle for MyAgent {
+    async fn pause(&mut self) -> AgentResult<()> {
+        // Save current progress
+        self.save_checkpoint().await?;
+        
+        // Update state
+        self.state = AgentState::Paused;
+        
+        // Release resources if needed
+        self.release_temporary_resources().await?;
+        
+        Ok(())
+    }
+    
+    async fn resume(&mut self) -> AgentResult<()> {
+        // Restore resources
+        self.acquire_resources().await?;
+        
+        // Load checkpoint
+        self.load_checkpoint().await?;
+        
+        // Update state
+        self.state = AgentState::Ready;
+        
+        Ok(())
+    }
+}
+```
+
+### resume
+
+```rust
+async fn resume(&mut self) -> AgentResult<()>
+```
+
+Resumes execution from a paused state.
+
+**State Transition:** `Paused → Ready`
+
+**Use Cases:**
+- Continue paused tasks
+- Restore from saved checkpoints
+- Re-acquire resources after pause
+
+## State Transitions
+
+The `AgentLifecycle` trait interacts with the agent state machine:
+
+```text
+                    ┌──────────┐
+                    │ Created  │
+                    └────┬─────┘
+                         │ initialize()
+                    ┌────▼──────────┐
+                    │ Initializing  │
+                    └────┬──────────┘
+                         │
+                    ┌────▼─────┐
+           ┌────────│  Ready   │◄──────────┐
+           │        └────┬─────┘           │
+           │ execute()   │                 │ resume()
+           │        ┌────▼──────┐          │
+           │        │ Executing │          │
+           │        └─────┬─────┘          │
+           │              │                │
+           │              │ pause()        │
+           │        ┌─────▼─────┐          │
+           └───────►│  Paused   │──────────┘
+                    └───────────┘
+```
+
+## Complete Implementation Example
+
+```rust
+use mofa_sdk::kernel::{
+    MoFAAgent, AgentLifecycle, AgentInput, AgentOutput, AgentContext,
+    AgentResult, AgentState, AgentCapabilities,
+};
+use async_trait::async_trait;
+use std::collections::HashMap;
+
+struct LongRunningAgent {
+    id: String,
+    name: String,
+    capabilities: AgentCapabilities,
+    state: AgentState,
+    progress: usize,
+    checkpoint: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[async_trait]
+impl MoFAAgent for LongRunningAgent {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    
+    fn name(&self) -> &str {
+        &self.name
+    }
+    
+    fn capabilities(&self) -> &AgentCapabilities {
+        &self.capabilities
+    }
+    
+    fn state(&self) -> AgentState {
+        self.state.clone()
+    }
+    
+    async fn initialize(&mut self, _ctx: &AgentContext) -> AgentResult<()> {
+        self.state = AgentState::Ready;
+        self.progress = 0;
+        Ok(())
+    }
+    
+    async fn execute(
+        &mut self,
+        input: AgentInput,
+        ctx: &AgentContext,
+    ) -> AgentResult<AgentOutput> {
+        self.state = AgentState::Executing;
+        
+        // Long-running task with pause check
+        let total_steps = 100;
+        for step in self.progress..total_steps {
+            // Check for pause/interrupt
+            if ctx.is_interrupted() {
+                break;
+            }
+            
+            if self.state == AgentState::Paused {
+                self.progress = step;
+                break;
+            }
+            
+            // Process step
+            self.process_step(step).await?;
+            self.progress = step + 1;
+        }
+        
+        self.state = AgentState::Ready;
+        Ok(AgentOutput::text(format!("Completed {} steps", self.progress)))
+    }
+    
+    async fn shutdown(&mut self) -> AgentResult<()> {
+        self.state = AgentState::Shutdown;
+        self.checkpoint = None;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AgentLifecycle for LongRunningAgent {
+    async fn pause(&mut self) -> AgentResult<()> {
+        // Save checkpoint
+        let mut checkpoint = HashMap::new();
+        checkpoint.insert(
+            "progress".to_string(),
+            serde_json::json!(self.progress),
+        );
+        self.checkpoint = Some(checkpoint);
+        
+        // Update state
+        self.state = AgentState::Paused;
+        
+        println!("Agent paused at step {}", self.progress);
+        Ok(())
+    }
+    
+    async fn resume(&mut self) -> AgentResult<()> {
+        // Restore from checkpoint if available
+        if let Some(checkpoint) = &self.checkpoint {
+            if let Some(progress) = checkpoint.get("progress") {
+                self.progress = progress.as_u64().unwrap_or(0) as usize;
+            }
+        }
+        
+        // Update state
+        self.state = AgentState::Ready;
+        
+        println!("Agent resumed from step {}", self.progress);
+        Ok(())
+    }
+}
+
+impl LongRunningAgent {
+    async fn process_step(&self, step: usize) -> AgentResult<()> {
+        // Simulate work
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        println!("Processing step {}", step);
+        Ok(())
+    }
+}
+```
+
+## Usage Example
+
+```rust
+use mofa_sdk::kernel::{AgentContext, AgentInput, AgentLifecycle};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut agent = LongRunningAgent {
+        id: "long-runner".to_string(),
+        name: "Long Running Agent".to_string(),
+        capabilities: AgentCapabilities::default(),
+        state: AgentState::Created,
+        progress: 0,
+        checkpoint: None,
+    };
+    
+    let ctx = AgentContext::new("exec-001");
+    
+    // Initialize
+    agent.initialize(&ctx).await?;
+    
+    // Start execution in background
+    let agent_clone = agent.clone();
+    let ctx_clone = ctx.clone();
+    let handle = tokio::spawn(async move {
+        agent_clone.execute(AgentInput::Empty, &ctx_clone).await
+    });
+    
+    // Pause after 2 seconds
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    agent.pause().await?;
+    println!("Agent paused!");
+    
+    // Resume after 1 second
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    agent.resume().await?;
+    println!("Agent resumed!");
+    
+    // Wait for completion
+    let output = handle.await??;
+    println!("Result: {}", output.to_text());
+    
+    // Shutdown
+    agent.shutdown().await?;
+    
+    Ok(())
+}
+```
+
+## Best Practices
+
+### 1. Save State on Pause
+
+Always save enough state to resume correctly:
+
+```rust
+async fn pause(&mut self) -> AgentResult<()> {
+    // Save all necessary state
+    self.checkpoint = Some(serde_json::json!({
+        "progress": self.progress,
+        "batch_id": self.current_batch_id,
+        "partial_results": self.partial_results,
+    }));
+    
+    self.state = AgentState::Paused;
+    Ok(())
+}
+```
+
+### 2. Check Pause State in Loops
+
+For long-running tasks, regularly check if pause was requested:
+
+```rust
+async fn execute(&mut self, input: AgentInput, ctx: &AgentContext) -> AgentResult<AgentOutput> {
+    for item in large_dataset {
+        // Check for pause
+        if self.state == AgentState::Paused {
+            return Ok(AgentOutput::text("Paused"));
+        }
+        
+        // Check for interrupt
+        if ctx.is_interrupted() {
+            break;
+        }
+        
+        process_item(item).await?;
+    }
+    
+    Ok(AgentOutput::text("Complete"))
+}
+```
+
+### 3. Release Resources on Pause
+
+Free up resources when paused:
+
+```rust
+async fn pause(&mut self) -> AgentResult<()> {
+    // Release database connections
+    self.db_pool.close().await?;
+    
+    // Close file handles
+    self.file_handles.clear();
+    
+    // Save state
+    self.save_checkpoint().await?;
+    
+    self.state = AgentState::Paused;
+    Ok(())
+}
+
+async fn resume(&mut self) -> AgentResult<()> {
+    // Re-acquire resources
+    self.db_pool = create_pool().await?;
+    
+    // Restore state
+    self.load_checkpoint().await?;
+    
+    self.state = AgentState::Ready;
+    Ok(())
+}
+```
+
+### 4. Handle Resume Failures
+
+Handle cases where resume might fail:
+
+```rust
+async fn resume(&mut self) -> AgentResult<()> {
+    // Attempt to restore checkpoint
+    match self.load_checkpoint().await {
+        Ok(_) => {
+            self.state = AgentState::Ready;
+            Ok(())
+        }
+        Err(e) => {
+            // If checkpoint is corrupted, reset to initial state
+            tracing::warn!("Failed to load checkpoint: {}, resetting", e);
+            self.progress = 0;
+            self.state = AgentState::Ready;
+            Ok(())
+        }
+    }
+}
+```
+
+## Related Extension Traits
+
+The `MoFAAgent` trait has other optional extensions:
+
+- **AgentMessaging** - Message and event handling
+- **AgentPluginSupport** - Plugin registration and management
+
+All extension traits follow the same optional pattern - only implement them when needed.
+
+## See Also
+
+- [MoFAAgent](/api/mofa-agent) - Core agent trait
+- [AgentInput & AgentOutput](/api/agent-input-output) - Data types
+- [AgentContext](/api/agent-context) - Execution context
+- [AgentState](/api/agent-input-output#agentstate) - State machine

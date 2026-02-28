@@ -1,0 +1,626 @@
+---
+title: "mofa session"
+description: "Manage and export agent conversation sessions"
+icon: "clock-rotate-left"
+---
+
+The `mofa session` command provides session management including listing, viewing, exporting, and deleting conversation sessions.
+
+## Subcommands
+
+<CardGroup cols={2}>
+
+<Card title="list" icon="list">
+  List all sessions
+</Card>
+
+<Card title="show" icon="eye">
+  Show session details
+</Card>
+
+<Card title="export" icon="download">
+  Export session data
+</Card>
+
+<Card title="delete" icon="trash">
+  Delete a session
+</Card>
+
+</CardGroup>
+
+## mofa session list
+
+List all conversation sessions with filtering options.
+
+### Usage
+
+```bash
+mofa session list [OPTIONS]
+```
+
+### Options
+
+#### `-a, --agent <AGENT_ID>`
+
+Filter sessions by agent ID.
+
+- **Type:** String
+- **Default:** None (show all)
+
+```bash
+mofa session list --agent my-agent
+```
+
+#### `-n, --limit <N>`
+
+Limit number of results.
+
+- **Type:** Integer
+- **Default:** All sessions
+
+```bash
+mofa session list --limit 10
+```
+
+### Examples
+
+#### List all sessions
+
+```bash
+mofa session list
+```
+
+**Output:**
+
+```
+→ Listing sessions
+
+┌─────────────────────────┬─────────────────────┬───────────────┬─────────┐
+│ session_id              │ created_at          │ message_count │ status │
+├─────────────────────────┼─────────────────────┼───────────────┼─────────┤
+│ agent-001:session-123   │ 2024-02-28 10:30:00 │ 12            │ active │
+│ agent-001:session-124   │ 2024-02-28 11:45:00 │ 8             │ active │
+│ agent-002:session-125   │ 2024-02-28 12:15:00 │ 5             │ active │
+└─────────────────────────┴─────────────────────┴───────────────┴─────────┘
+```
+
+#### Filter by agent
+
+```bash
+mofa session list --agent agent-001
+```
+
+**Output:**
+
+```
+→ Listing sessions
+  Filtering by agent: agent-001
+
+┌─────────────────────────┬─────────────────────┬───────────────┬─────────┐
+│ session_id              │ created_at          │ message_count │ status │
+├─────────────────────────┼─────────────────────┼───────────────┼─────────┤
+│ agent-001:session-123   │ 2024-02-28 10:30:00 │ 12            │ active │
+│ agent-001:session-124   │ 2024-02-28 11:45:00 │ 8             │ active │
+└─────────────────────────┴─────────────────────┴───────────────┴─────────┘
+```
+
+#### Limit results
+
+```bash
+mofa session list --limit 5
+```
+
+**Output:**
+
+```
+→ Listing sessions
+  Limit: 5
+
+┌─────────────────────────┬─────────────────────┬───────────────┬─────────┐
+│ session_id              │ created_at          │ message_count │ status │
+├─────────────────────────┼─────────────────────┼───────────────┼─────────┤
+│ agent-001:session-123   │ 2024-02-28 10:30:00 │ 12            │ active │
+│ agent-001:session-124   │ 2024-02-28 11:45:00 │ 8             │ active │
+│ agent-002:session-125   │ 2024-02-28 12:15:00 │ 5             │ active │
+│ agent-002:session-126   │ 2024-02-28 13:00:00 │ 3             │ active │
+│ agent-003:session-127   │ 2024-02-28 14:20:00 │ 15            │ active │
+└─────────────────────────┴─────────────────────┴───────────────┴─────────┘
+```
+
+#### JSON output
+
+```bash
+mofa session list --output-format json
+```
+
+**Output:**
+
+```json
+[
+  {
+    "session_id": "agent-001:session-123",
+    "created_at": "2024-02-28 10:30:00",
+    "message_count": 12,
+    "status": "active"
+  },
+  {
+    "session_id": "agent-001:session-124",
+    "created_at": "2024-02-28 11:45:00",
+    "message_count": 8,
+    "status": "active"
+  }
+]
+```
+
+---
+
+## mofa session show
+
+Show detailed information about a specific session.
+
+### Usage
+
+```bash
+mofa session show <SESSION_ID> [OPTIONS]
+```
+
+### Arguments
+
+#### `<SESSION_ID>`
+
+**Required.** Session identifier.
+
+```bash
+mofa session show agent-001:session-123
+```
+
+### Options
+
+#### `-f, --format <FORMAT>`
+
+Output format.
+
+- **Type:** Enum
+- **Values:** `json`, `table`, `yaml`
+- **Default:** `table`
+- **Alias:** `-o` (for backward compatibility)
+
+```bash
+mofa session show session-123 --format json
+mofa session show session-123 -o yaml
+```
+
+### Examples
+
+#### Show session (table format)
+
+```bash
+mofa session show agent-001:session-123
+```
+
+**Output:**
+
+```
+Session: agent-001:session-123
+Created: 2024-02-28 10:30:00
+Messages: 12
+Status: active
+
+Metadata:
+  agent_id: agent-001
+  user_id: user-456
+  context: customer_support
+
+Conversation:
+
+┌─────────────┬─────────────────────┬──────────────────────────────────────────────────────────────────────┐
+│ Timestamp   │ Role      │ Content                                                              │
+├─────────────┼─────────────────────┼──────────────────────────────────────────────────────────────────────┤
+│ 10:30:05    │ user      │ Hello, I need help with my order                                     │
+│ 10:30:08    │ assistant │ I'd be happy to help! What's your order number?                     │
+│ 10:30:15    │ user      │ ORD-12345                                                            │
+│ 10:30:18    │ assistant │ I found your order. It's currently being processed. Expected...      │
+└─────────────┴─────────────────────┴──────────────────────────────────────────────────────────────────────┘
+```
+
+#### Show session (JSON format)
+
+```bash
+mofa session show agent-001:session-123 --format json
+```
+
+**Output:**
+
+```json
+{
+  "session_id": "agent-001:session-123",
+  "created_at": "2024-02-28T10:30:00Z",
+  "message_count": 12,
+  "status": "active",
+  "metadata": {
+    "agent_id": "agent-001",
+    "user_id": "user-456",
+    "context": "customer_support"
+  },
+  "messages": [
+    {
+      "timestamp": "2024-02-28T10:30:05Z",
+      "role": "user",
+      "content": "Hello, I need help with my order"
+    },
+    {
+      "timestamp": "2024-02-28T10:30:08Z",
+      "role": "assistant",
+      "content": "I'd be happy to help! What's your order number?"
+    }
+  ]
+}
+```
+
+#### Show session (YAML format)
+
+```bash
+mofa session show agent-001:session-123 --format yaml
+```
+
+**Output:**
+
+```yaml
+session_id: agent-001:session-123
+created_at: 2024-02-28T10:30:00Z
+message_count: 12
+status: active
+metadata:
+  agent_id: agent-001
+  user_id: user-456
+  context: customer_support
+messages:
+  - timestamp: 2024-02-28T10:30:05Z
+    role: user
+    content: Hello, I need help with my order
+  - timestamp: 2024-02-28T10:30:08Z
+    role: assistant
+    content: I'd be happy to help! What's your order number?
+```
+
+---
+
+## mofa session export
+
+Export session data to a file.
+
+### Usage
+
+```bash
+mofa session export <SESSION_ID> -o <OUTPUT> --format <FORMAT>
+```
+
+### Arguments
+
+#### `<SESSION_ID>`
+
+**Required.** Session identifier to export.
+
+```bash
+mofa session export agent-001:session-123 -o session.json --format json
+```
+
+### Options
+
+#### `-o, --output <PATH>`
+
+**Required.** Output file path.
+
+- **Type:** Path
+
+```bash
+mofa session export session-123 -o ./exports/session.json --format json
+```
+
+#### `-f, --format <FORMAT>`
+
+**Required.** Export format.
+
+- **Type:** Enum
+- **Values:** `json`, `yaml`
+
+```bash
+mofa session export session-123 -o session.yaml --format yaml
+```
+
+### Examples
+
+#### Export to JSON
+
+```bash
+mofa session export agent-001:session-123 -o session.json --format json
+```
+
+**Output:**
+
+```
+→ Exporting session: agent-001:session-123
+  Format: json
+  Output: session.json
+  ✓ Exported 12 messages
+✓ Session exported successfully
+```
+
+**File contents (session.json):**
+
+```json
+{
+  "session_id": "agent-001:session-123",
+  "created_at": "2024-02-28T10:30:00Z",
+  "metadata": {
+    "agent_id": "agent-001",
+    "user_id": "user-456"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello",
+      "timestamp": "2024-02-28T10:30:05Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Hi! How can I help?",
+      "timestamp": "2024-02-28T10:30:08Z"
+    }
+  ]
+}
+```
+
+#### Export to YAML
+
+```bash
+mofa session export agent-001:session-123 -o session.yaml --format yaml
+```
+
+**Output:**
+
+```
+→ Exporting session: agent-001:session-123
+  Format: yaml
+  Output: session.yaml
+  ✓ Exported 12 messages
+✓ Session exported successfully
+```
+
+**File contents (session.yaml):**
+
+```yaml
+session_id: agent-001:session-123
+created_at: 2024-02-28T10:30:00Z
+metadata:
+  agent_id: agent-001
+  user_id: user-456
+messages:
+  - role: user
+    content: Hello
+    timestamp: 2024-02-28T10:30:05Z
+  - role: assistant
+    content: Hi! How can I help?
+    timestamp: 2024-02-28T10:30:08Z
+```
+
+---
+
+## mofa session delete
+
+Delete a session and its conversation history.
+
+### Usage
+
+```bash
+mofa session delete <SESSION_ID> [OPTIONS]
+```
+
+### Arguments
+
+#### `<SESSION_ID>`
+
+**Required.** Session identifier to delete.
+
+```bash
+mofa session delete agent-001:session-123
+```
+
+### Options
+
+#### `--force`
+
+Skip confirmation prompt.
+
+- **Type:** Boolean flag
+- **Default:** `false`
+
+```bash
+mofa session delete session-123 --force
+```
+
+### Examples
+
+#### Interactive deletion
+
+```bash
+mofa session delete agent-001:session-123
+```
+
+**Output:**
+
+```
+→ Deleting session: agent-001:session-123
+
+Session contains 12 messages.
+This action cannot be undone.
+
+Delete session? [y/N]: y
+
+  Removing session data...
+✓ Session deleted successfully
+```
+
+#### Force deletion
+
+```bash
+mofa session delete agent-001:session-123 --force
+```
+
+**Output:**
+
+```
+→ Deleting session: agent-001:session-123
+  Removing session data...
+✓ Session deleted successfully
+```
+
+### Error Codes
+
+| Code | Description |
+|------|-------------|
+| `0` | Session deleted successfully |
+| `1` | Session not found |
+| `2` | Permission denied |
+| `3` | Delete operation failed |
+
+---
+
+## Session Structure
+
+### Session Data Model
+
+A session contains:
+
+```json
+{
+  "session_id": "unique-identifier",
+  "created_at": "2024-02-28T10:30:00Z",
+  "updated_at": "2024-02-28T12:45:00Z",
+  "metadata": {
+    "agent_id": "agent-001",
+    "user_id": "user-456",
+    "tags": ["customer-support", "order-inquiry"],
+    "custom_field": "custom_value"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Message text",
+      "timestamp": "2024-02-28T10:30:05Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Response text",
+      "timestamp": "2024-02-28T10:30:08Z"
+    }
+  ]
+}
+```
+
+### Message Roles
+
+| Role | Description |
+|------|-------------|
+| `user` | User input message |
+| `assistant` | Agent response |
+| `system` | System-level message |
+| `tool` | Tool execution result |
+
+## Common Workflows
+
+### Review recent conversations
+
+```bash
+# List recent sessions
+mofa session list --limit 10
+
+# View specific session
+mofa session show agent-001:session-123
+
+# Export for analysis
+mofa session export agent-001:session-123 -o analysis.json --format json
+```
+
+### Audit agent interactions
+
+```bash
+# List all sessions for an agent
+mofa session list --agent my-agent
+
+# Export all sessions
+for session in $(mofa session list --agent my-agent --output-format json | jq -r '.[].session_id'); do
+  mofa session export $session -o "exports/${session}.json" --format json
+done
+```
+
+### Clean up old sessions
+
+```bash
+# List all sessions
+mofa session list
+
+# Delete specific session
+mofa session delete old-session-id
+
+# Batch delete (with caution)
+mofa session list --output-format json | \
+  jq -r '.[].session_id' | \
+  xargs -I {} mofa session delete {} --force
+```
+
+### Debug conversation flow
+
+```bash
+# View session in detail
+mofa session show session-123 --format json | jq
+
+# Filter to user messages only
+mofa session show session-123 --format json | \
+  jq '.messages[] | select(.role == "user")'
+
+# Count messages by role
+mofa session show session-123 --format json | \
+  jq '.messages | group_by(.role) | map({role: .[0].role, count: length})'
+```
+
+## Storage
+
+Sessions are stored in:
+
+```
+~/.local/share/mofa/sessions/
+  ├── agent-001/
+  │   ├── session-123.json
+  │   └── session-124.json
+  └── agent-002/
+      └── session-125.json
+```
+
+<Warning>
+  Sessions are stored locally by default. For production deployments, configure persistent storage with a database backend.
+</Warning>
+
+## Tips
+
+<Tip>
+  **Filtering:** Use `--agent` to quickly find sessions for a specific agent.
+</Tip>
+
+<Tip>
+  **Exporting:** Export sessions regularly for backup and analysis.
+</Tip>
+
+<Tip>
+  **JSON Processing:** Pipe JSON output to `jq` for advanced filtering and analysis.
+</Tip>
+
+<Tip>
+  **Cleanup:** Regularly delete old sessions to save disk space.
+</Tip>
+
+## See Also
+
+- [Agent Management](/cli/agent) - Manage agents
+- [Configuration](/cli/config) - Configure storage
+- [Database Setup](/cli/db) - Set up persistent storage

@@ -1,0 +1,329 @@
+---
+title: Your First Agent
+description: Step-by-step tutorial for building your first MoFA agent from scratch
+icon: rocket
+---
+
+Learn how to build your first AI agent using the MoFA framework. This tutorial will guide you through creating a simple LLM-powered agent that can answer questions about Rust.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Rust** stable toolchain (edition 2024 - requires Rust ≥ 1.85)
+- **Git** for cloning the repository
+- An **OpenAI API key** or access to a compatible LLM provider
+
+<Steps>
+  <Step title="Install Rust">
+    Install the Rust toolchain using rustup:
+
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    rustup default stable
+    ```
+
+    Verify your installation:
+
+    ```bash
+    rustc --version   # Should be 1.85.0 or newer
+    cargo --version
+    ```
+  </Step>
+
+  <Step title="Create a New Project">
+    Create a new Rust project for your agent:
+
+    ```bash
+    cargo new my-first-agent
+    cd my-first-agent
+    ```
+
+    Add MoFA SDK to your `Cargo.toml`:
+
+    ```toml
+    [dependencies]
+    mofa-sdk = { git = "https://github.com/mofa-org/mofa.git" }
+    tokio = { version = "1", features = ["full"] }
+    dotenvy = "0.15"
+    ```
+  </Step>
+
+  <Step title="Set Up Environment Variables">
+    Create a `.env` file in your project root to store your API credentials:
+
+    ```env
+    OPENAI_API_KEY=sk-...
+    OPENAI_MODEL=gpt-4o           # optional, default: gpt-4o
+    ```
+
+    <Note>
+      The `.env` file will be automatically loaded by the `dotenvy` crate.
+    </Note>
+  </Step>
+
+  <Step title="Define Your Agent Structure">
+    Create your agent by implementing the `MoFAAgent` trait. Here's a complete example:
+
+    ```rust src/main.rs
+    use std::sync::Arc;
+    use dotenvy::dotenv;
+    use mofa_sdk::kernel::agent::prelude::*;
+    use mofa_sdk::llm::{LLMClient, openai_from_env};
+
+    struct LLMAgent {
+        id: String,
+        name: String,
+        capabilities: AgentCapabilities,
+        state: AgentState,
+        client: LLMClient,
+    }
+
+    impl LLMAgent {
+        fn new(client: LLMClient) -> Self {
+            Self {
+                id: "llm-agent-1".to_string(),
+                name: "LLM Agent".to_string(),
+                capabilities: AgentCapabilities::builder()
+                    .tag("llm").tag("qa")
+                    .input_type(InputType::Text)
+                    .output_type(OutputType::Text)
+                    .build(),
+                state: AgentState::Created,
+                client,
+            }
+        }
+    }
+    ```
+
+    ### Understanding the Structure
+
+    - **id**: Unique identifier for your agent
+    - **name**: Human-readable name
+    - **capabilities**: Describes what your agent can do (used for discovery and routing)
+    - **state**: Current lifecycle state of the agent
+    - **client**: LLM client for making API calls
+  </Step>
+
+  <Step title="Implement the MoFAAgent Trait">
+    Now implement the required trait methods:
+
+    ```rust src/main.rs
+    #[async_trait]
+    impl MoFAAgent for LLMAgent {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn capabilities(&self) -> &AgentCapabilities {
+            &self.capabilities
+        }
+
+        fn state(&self) -> AgentState {
+            self.state.clone()
+        }
+
+        async fn initialize(&mut self, _ctx: &AgentContext) -> AgentResult<()> {
+            self.state = AgentState::Ready;
+            Ok(())
+        }
+
+        async fn execute(&mut self, input: AgentInput, _ctx: &AgentContext) -> AgentResult<AgentOutput> {
+            self.state = AgentState::Executing;
+            
+            let answer = self.client
+                .ask_with_system("You are a helpful Rust expert.", &input.to_text())
+                .await
+                .map_err(|e| AgentError::ExecutionFailed(e.to_string()))?;
+            
+            self.state = AgentState::Ready;
+            Ok(AgentOutput::text(answer))
+        }
+
+        async fn shutdown(&mut self) -> AgentResult<()> {
+            self.state = AgentState::Shutdown;
+            Ok(())
+        }
+    }
+    ```
+
+    ### Core Methods Explained
+
+    - **initialize**: Prepare the agent for execution (load resources, establish connections)
+    - **execute**: The main task execution method - processes input and returns output
+    - **shutdown**: Clean up resources gracefully
+  </Step>
+
+  <Step title="Create the Main Function">
+    Wire everything together in your main function:
+
+    ```rust src/main.rs
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        dotenv().ok();   // Load .env file
+
+        // Create LLM provider and client
+        let provider = openai_from_env()?;
+        let client   = LLMClient::new(Arc::new(provider));
+
+        // Create and initialize agent
+        let mut agent = LLMAgent::new(client);
+        let ctx       = AgentContext::new("exec-001");
+
+        agent.initialize(&ctx).await?;
+
+        // Execute a query
+        let output = agent.execute(
+            AgentInput::text("What is the borrow checker in Rust?"),
+            &ctx,
+        ).await?;
+
+        println!("{}", output.as_text().unwrap_or("(no answer)"));
+        
+        // Clean shutdown
+        agent.shutdown().await?;
+        Ok(())
+    }
+    ```
+  </Step>
+
+  <Step title="Run Your Agent">
+    Build and run your first agent:
+
+    ```bash
+    cargo run
+    ```
+
+    You should see a response from the LLM explaining the Rust borrow checker!
+  </Step>
+</Steps>
+
+## Complete Example
+
+Here's the complete code for reference:
+
+```rust src/main.rs
+use std::sync::Arc;
+use dotenvy::dotenv;
+use mofa_sdk::kernel::agent::prelude::*;
+use mofa_sdk::llm::{LLMClient, openai_from_env};
+
+struct LLMAgent {
+    id: String,
+    name: String,
+    capabilities: AgentCapabilities,
+    state: AgentState,
+    client: LLMClient,
+}
+
+impl LLMAgent {
+    fn new(client: LLMClient) -> Self {
+        Self {
+            id: "llm-agent-1".to_string(),
+            name: "LLM Agent".to_string(),
+            capabilities: AgentCapabilities::builder()
+                .tag("llm").tag("qa")
+                .input_type(InputType::Text)
+                .output_type(OutputType::Text)
+                .build(),
+            state: AgentState::Created,
+            client,
+        }
+    }
+}
+
+#[async_trait]
+impl MoFAAgent for LLMAgent {
+    fn id(&self) -> &str { &self.id }
+    fn name(&self) -> &str { &self.name }
+    fn capabilities(&self) -> &AgentCapabilities { &self.capabilities }
+    fn state(&self) -> AgentState { self.state.clone() }
+
+    async fn initialize(&mut self, _ctx: &AgentContext) -> AgentResult<()> {
+        self.state = AgentState::Ready;
+        Ok(())
+    }
+
+    async fn execute(&mut self, input: AgentInput, _ctx: &AgentContext) -> AgentResult<AgentOutput> {
+        self.state = AgentState::Executing;
+        let answer = self.client
+            .ask_with_system("You are a helpful Rust expert.", &input.to_text())
+            .await
+            .map_err(|e| AgentError::ExecutionFailed(e.to_string()))?;
+        self.state = AgentState::Ready;
+        Ok(AgentOutput::text(answer))
+    }
+
+    async fn shutdown(&mut self) -> AgentResult<()> {
+        self.state = AgentState::Shutdown;
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+
+    let provider = openai_from_env()?;
+    let client   = LLMClient::new(Arc::new(provider));
+
+    let mut agent = LLMAgent::new(client);
+    let ctx       = AgentContext::new("exec-001");
+
+    agent.initialize(&ctx).await?;
+
+    let output = agent.execute(
+        AgentInput::text("What is the borrow checker in Rust?"),
+        &ctx,
+    ).await?;
+
+    println!("{}", output.as_text().unwrap_or("(no answer)"));
+    agent.shutdown().await?;
+    Ok(())
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="LLM Integration" icon="brain" href="/guides/llm-integration">
+    Learn how to integrate different LLM providers (OpenAI, Anthropic, Ollama, Gemini)
+  </Card>
+  <Card title="Agent Lifecycle" icon="rotate" href="/guides/agent-lifecycle">
+    Understand the full agent lifecycle (pause, resume, interrupt)
+  </Card>
+  <Card title="Capabilities" icon="sliders" href="/guides/capabilities-and-state">
+    Master agent capabilities and state management
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Explore the complete MoFA API documentation
+  </Card>
+</CardGroup>
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="Error: OPENAI_API_KEY not found">
+    Make sure you've created a `.env` file in your project root with your API key:
+    
+    ```env
+    OPENAI_API_KEY=sk-...
+    ```
+  </Accordion>
+
+  <Accordion title="Compilation error: edition 2024">
+    MoFA requires Rust 1.85 or newer. Update your toolchain:
+    
+    ```bash
+    rustup update stable
+    ```
+  </Accordion>
+
+  <Accordion title="Network timeout errors">
+    If you're using a proxy or firewall, you may need to configure your network settings. You can also increase the timeout in the LLM configuration.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,411 @@
+---
+title: 'AgentBuilder API'
+description: 'Fluent API for building and configuring agents with plugins'
+---
+
+The `AgentBuilder` provides a fluent API for constructing agents with plugins, capabilities, and runtime configuration.
+
+## Overview
+
+`AgentBuilder` simplifies agent creation by providing:
+
+- Fluent builder pattern
+- Plugin registration
+- Input/output port configuration
+- Concurrency and timeout settings
+- Integration with both Dora and SimpleRuntime
+
+## Creating an Agent
+
+```rust
+use mofa_runtime::AgentBuilder;
+
+let runtime = AgentBuilder::new("agent-1", "My Agent")
+    .with_capability("chat")
+    .with_capability("summarization")
+    .with_plugin(Box::new(llm_plugin))
+    .with_max_concurrent_tasks(20)
+    .with_timeout(Duration::from_secs(60))
+    .with_agent(my_agent)
+    .await?;
+```
+
+## Constructor
+
+### new
+
+Create a new AgentBuilder.
+
+<ParamField path="agent_id" type="&str">
+  Unique identifier for the agent
+</ParamField>
+
+<ParamField path="name" type="&str">
+  Human-readable agent name
+</ParamField>
+
+```rust
+let builder = AgentBuilder::new("assistant-1", "AI Assistant");
+```
+
+## Configuration Methods
+
+### with_capability
+
+Add a single capability tag.
+
+<ParamField path="capability" type="&str">
+  Capability identifier (e.g., "chat", "vision", "code")
+</ParamField>
+
+```rust
+let builder = builder
+    .with_capability("chat")
+    .with_capability("vision")
+    .with_capability("tool_use");
+```
+
+### with_capabilities
+
+Add multiple capabilities at once.
+
+<ParamField path="capabilities" type="Vec<&str>">
+  List of capability identifiers
+</ParamField>
+
+```rust
+let builder = builder.with_capabilities(vec![
+    "chat",
+    "summarization",
+    "translation",
+]);
+```
+
+### with_dependency
+
+Add a dependency on another agent.
+
+<ParamField path="dependency" type="&str">
+  Agent ID that this agent depends on
+</ParamField>
+
+```rust
+let builder = builder
+    .with_dependency("storage-agent")
+    .with_dependency("tool-registry");
+```
+
+### with_plugin
+
+Register a plugin with the agent.
+
+<ParamField path="plugin" type="Box<dyn AgentPlugin>">
+  Plugin implementation
+</ParamField>
+
+```rust
+let builder = builder
+    .with_plugin(Box::new(llm_plugin))
+    .with_plugin(Box::new(storage_plugin))
+    .with_plugin(Box::new(tool_plugin));
+```
+
+## I/O Configuration
+
+### with_input
+
+Add an input port (Dora mode only).
+
+<ParamField path="input" type="&str">
+  Input port name
+</ParamField>
+
+```rust
+let builder = builder
+    .with_input("user_messages")
+    .with_input("system_events");
+```
+
+### with_output
+
+Add an output port (Dora mode only).
+
+<ParamField path="output" type="&str">
+  Output port name
+</ParamField>
+
+```rust
+let builder = builder
+    .with_output("responses")
+    .with_output("logs");
+```
+
+## Runtime Configuration
+
+### with_max_concurrent_tasks
+
+Set maximum concurrent task limit.
+
+<ParamField path="max" type="usize">
+  Maximum number of concurrent tasks (default: 10)
+</ParamField>
+
+```rust
+let builder = builder.with_max_concurrent_tasks(50);
+```
+
+### with_timeout
+
+Set default execution timeout.
+
+<ParamField path="timeout" type="Duration">
+  Timeout duration (default: 30 seconds)
+</ParamField>
+
+```rust
+let builder = builder.with_timeout(Duration::from_secs(120));
+```
+
+### with_config
+
+Add custom configuration key-value pair.
+
+<ParamField path="key" type="&str">
+  Configuration key
+</ParamField>
+
+<ParamField path="value" type="&str">
+  Configuration value
+</ParamField>
+
+```rust
+let builder = builder
+    .with_config("log_level", "debug")
+    .with_config("enable_metrics", "true");
+```
+
+## Build Methods
+
+### build_config
+
+Build the agent configuration.
+
+```rust
+let config = builder.build_config();
+println!("Agent ID: {}", config.agent_id);
+println!("Name: {}", config.name);
+```
+
+### build_metadata
+
+Build the agent metadata.
+
+```rust
+let metadata = builder.build_metadata();
+println!("Capabilities: {:?}", metadata.capabilities);
+println!("State: {:?}", metadata.state);
+```
+
+### with_agent
+
+Provide the MoFAAgent implementation and build runtime.
+
+<ParamField path="agent" type="A: MoFAAgent">
+  The agent implementation
+</ParamField>
+
+```rust
+// Non-Dora mode: Returns SimpleAgentRuntime
+let runtime = builder.with_agent(my_agent).await?;
+
+// Dora mode: Returns AgentRuntime
+let runtime = builder.with_agent(my_agent).await?;
+```
+
+### build_and_start
+
+Build and immediately start the agent runtime.
+
+<ParamField path="agent" type="A: MoFAAgent">
+  The agent implementation
+</ParamField>
+
+```rust
+let runtime = builder.build_and_start(my_agent).await?;
+// Agent is now running and ready to process events
+```
+
+## Complete Example
+
+```rust
+use mofa_runtime::AgentBuilder;
+use mofa_foundation::llm::{LLMPlugin, OpenAIProvider, OpenAIConfig};
+use mofa_plugins::tool::ToolPluginAdapter;
+use std::sync::Arc;
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Create plugins
+    let llm_config = OpenAIConfig::new("sk-...")
+        .with_model("gpt-4");
+    let llm_provider = Arc::new(OpenAIProvider::new(llm_config));
+    let llm_plugin = LLMPlugin::new("openai", llm_provider);
+
+    let calculator = Arc::new(CalculatorTool::new());
+    let tool_plugin = ToolPluginAdapter::new(calculator);
+
+    // 2. Create agent implementation
+    let agent = MyAgent::new();
+
+    // 3. Build and start runtime
+    let runtime = AgentBuilder::new("assistant", "AI Assistant")
+        // Capabilities
+        .with_capabilities(vec![
+            "chat",
+            "tool_use",
+            "reasoning",
+        ])
+        // Dependencies
+        .with_dependency("storage-service")
+        // Plugins
+        .with_plugin(Box::new(llm_plugin))
+        .with_plugin(Box::new(tool_plugin))
+        // I/O ports (Dora mode)
+        .with_input("user_input")
+        .with_output("agent_output")
+        // Runtime config
+        .with_max_concurrent_tasks(30)
+        .with_timeout(Duration::from_secs(90))
+        .with_config("log_level", "info")
+        .with_config("enable_tracing", "true")
+        // Build and start
+        .build_and_start(agent)
+        .await?;
+
+    println!("Agent {} started", runtime.metadata().id);
+
+    // 4. Inject events (Simple mode)
+    #[cfg(not(feature = "dora"))]
+    {
+        let event = AgentEvent::TaskReceived(TaskRequest {
+            task_id: "task-1".to_string(),
+            content: "Hello!".to_string(),
+        });
+        runtime.inject_event(event).await?;
+    }
+
+    // 5. Send messages (Dora mode)
+    #[cfg(feature = "dora")]
+    {
+        let message = AgentMessage::TaskRequest {
+            task_id: "task-1".to_string(),
+            content: "Analyze this data".to_string(),
+        };
+        runtime.send_output("agent_output", &message).await?;
+    }
+
+    Ok(())
+}
+```
+
+## Agent Configuration
+
+The builder produces an `AgentConfig`:
+
+```rust
+pub struct AgentConfig {
+    pub agent_id: String,
+    pub name: String,
+    pub node_config: HashMap<String, String>,
+}
+```
+
+## Agent Metadata
+
+The builder produces `AgentMetadata`:
+
+```rust
+pub struct AgentMetadata {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub capabilities: AgentCapabilities,
+    pub state: AgentState,
+}
+```
+
+## Dora Node Configuration
+
+In Dora mode, the builder creates a `DoraNodeConfig`:
+
+```rust
+pub struct DoraNodeConfig {
+    pub node_id: String,
+    pub name: String,
+    pub inputs: Vec<String>,
+    pub outputs: Vec<String>,
+    pub event_buffer_size: usize,
+    pub default_timeout: Duration,
+    pub custom_config: HashMap<String, String>,
+}
+```
+
+## Runtime Types
+
+### Non-Dora Mode
+
+Returns `SimpleAgentRuntime<A>`:
+
+```rust
+let runtime: SimpleAgentRuntime<MyAgent> = builder
+    .with_agent(my_agent)
+    .await?;
+```
+
+### Dora Mode
+
+Returns `AgentRuntime<A>`:
+
+```rust
+let runtime: AgentRuntime<MyAgent> = builder
+    .with_agent(my_agent)
+    .await?;
+```
+
+## Builder Pattern Example
+
+```rust
+impl MyApp {
+    async fn create_agent(&self) -> Result<SimpleAgentRuntime<MyAgent>> {
+        let builder = AgentBuilder::new(&self.agent_id, &self.agent_name);
+        
+        let builder = if self.enable_llm {
+            builder.with_plugin(Box::new(self.create_llm_plugin()?))
+        } else {
+            builder
+        };
+        
+        let builder = if self.enable_tools {
+            builder
+                .with_plugin(Box::new(self.create_tool_plugin()?))
+                .with_capability("tool_use")
+        } else {
+            builder
+        };
+        
+        builder
+            .with_max_concurrent_tasks(self.max_tasks)
+            .with_timeout(self.timeout)
+            .build_and_start(self.create_agent_impl())
+            .await
+    }
+}
+```
+
+## Related
+
+- [AgentRuntime](/api/agent-runtime) - Dora-based runtime
+- [SimpleRuntime](/api/simple-runtime) - Standalone runtime
+- [MoFAAgent Trait](/core-concepts/agent-trait) - Agent implementation interface

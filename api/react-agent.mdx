@@ -1,0 +1,561 @@
+---
+title: 'ReAct Agent API'
+description: 'Complete API reference for the ReAct (Reasoning + Acting) agent pattern'
+icon: 'robot'
+---
+
+## Overview
+
+The ReAct Agent implements the Reasoning + Acting pattern, enabling agents to think step-by-step and use tools to solve complex tasks. Built on the ractor Actor model, it supports concurrent execution and message passing.
+
+## Core Types
+
+### ReActAgent
+
+The main ReAct agent implementation that orchestrates the thought-action-observation loop.
+
+```rust
+pub struct ReActAgent {
+    llm: Arc<LLMAgent>,
+    tools: Arc<RwLock<HashMap<String, Arc<dyn ReActTool>>>>,
+    config: ReActConfig,
+}
+```
+
+**Key Methods:**
+
+<ResponseField name="run" type="async fn">
+  Executes a task using the ReAct loop
+  
+  ```rust
+  pub async fn run(&self, task: impl Into<String>) -> LLMResult<ReActResult>
+  ```
+  
+  **Parameters:**
+  - `task`: The task description (string)
+  
+  **Returns:** `LLMResult<ReActResult>` with execution details
+</ResponseField>
+
+<ResponseField name="register_tool" type="async fn">
+  Registers a tool for the agent to use
+  
+  ```rust
+  pub async fn register_tool(&self, tool: Arc<dyn ReActTool>)
+  ```
+  
+  **Parameters:**
+  - `tool`: Tool implementation wrapped in Arc
+</ResponseField>
+
+### ReActAgentBuilder
+
+Builder pattern for constructing ReAct agents with configuration.
+
+```rust
+let agent = ReActAgent::builder()
+    .with_llm(llm_agent)
+    .with_tool(Arc::new(SearchTool))
+    .with_max_iterations(5)
+    .with_temperature(0.7)
+    .build_async()
+    .await?;
+```
+
+**Builder Methods:**
+
+<ParamField path="with_llm" type="Arc<LLMAgent>" required>
+  Sets the LLM agent for reasoning
+</ParamField>
+
+<ParamField path="with_tool" type="Arc<dyn ReActTool>">
+  Adds a single tool to the agent
+</ParamField>
+
+<ParamField path="with_tools" type="Vec<Arc<dyn ReActTool>>">
+  Adds multiple tools at once
+</ParamField>
+
+<ParamField path="with_max_iterations" type="usize" default="10">
+  Sets maximum reasoning iterations
+</ParamField>
+
+<ParamField path="with_temperature" type="f32" default="0.7">
+  Sets LLM temperature for reasoning
+</ParamField>
+
+<ParamField path="with_system_prompt" type="String">
+  Provides custom system prompt
+</ParamField>
+
+<ParamField path="with_verbose" type="bool" default="true">
+  Enables detailed logging
+</ParamField>
+
+<ResponseField name="build" type="fn">
+  Builds the agent synchronously (spawns async task for tool registration)
+  
+  ```rust
+  pub fn build(self) -> LLMResult<ReActAgent>
+  ```
+</ResponseField>
+
+<ResponseField name="build_async" type="async fn">
+  Builds the agent asynchronously (waits for tool registration)
+  
+  ```rust
+  pub async fn build_async(self) -> LLMResult<ReActAgent>
+  ```
+</ResponseField>
+
+## Configuration
+
+### ReActConfig
+
+Configuration options for ReAct agent behavior.
+
+<ParamField path="max_iterations" type="usize" default="10">
+  Maximum number of thought-action-observation cycles
+</ParamField>
+
+<ParamField path="stream_output" type="bool" default="false">
+  Enable streaming of reasoning steps
+</ParamField>
+
+<ParamField path="temperature" type="f32" default="0.7">
+  LLM temperature for reasoning
+</ParamField>
+
+<ParamField path="system_prompt" type="Option<String>">
+  Custom system prompt (overrides default)
+</ParamField>
+
+<ParamField path="verbose" type="bool" default="true">
+  Show detailed reasoning information
+</ParamField>
+
+<ParamField path="max_tokens_per_step" type="Option<u32>" default="Some(2048)">
+  Maximum tokens per reasoning step
+</ParamField>
+
+## Results
+
+### ReActResult
+
+Complete execution result from a ReAct agent run.
+
+<ResponseField name="task_id" type="String">
+  Unique identifier for this execution
+</ResponseField>
+
+<ResponseField name="task" type="String">
+  Original task description
+</ResponseField>
+
+<ResponseField name="answer" type="String">
+  Final answer to the task
+</ResponseField>
+
+<ResponseField name="steps" type="Vec<ReActStep>">
+  All execution steps (thoughts, actions, observations)
+</ResponseField>
+
+<ResponseField name="success" type="bool">
+  Whether execution completed successfully
+</ResponseField>
+
+<ResponseField name="error" type="Option<String>">
+  Error message if execution failed
+</ResponseField>
+
+<ResponseField name="iterations" type="usize">
+  Number of reasoning iterations performed
+</ResponseField>
+
+<ResponseField name="duration_ms" type="u64">
+  Total execution time in milliseconds
+</ResponseField>
+
+### ReActStep
+
+A single step in the reasoning process.
+
+<ResponseField name="step_type" type="ReActStepType">
+  Type of step: `Thought`, `Action`, `Observation`, or `FinalAnswer`
+</ResponseField>
+
+<ResponseField name="content" type="String">
+  Content of the step
+</ResponseField>
+
+<ResponseField name="tool_name" type="Option<String>">
+  Name of tool used (for Action steps)
+</ResponseField>
+
+<ResponseField name="tool_input" type="Option<String>">
+  Input passed to tool (for Action steps)
+</ResponseField>
+
+<ResponseField name="step_number" type="usize">
+  Sequential step number
+</ResponseField>
+
+<ResponseField name="timestamp" type="u64">
+  Unix timestamp in milliseconds
+</ResponseField>
+
+## Tools
+
+### ReActTool Trait
+
+Trait for implementing custom tools.
+
+```rust
+#[async_trait::async_trait]
+pub trait ReActTool: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn parameters_schema(&self) -> Option<serde_json::Value>;
+    async fn execute(&self, input: &str) -> Result<String, String>;
+    fn to_llm_tool(&self) -> Tool;
+}
+```
+
+<ParamField path="name" type="fn() -> &str" required>
+  Unique tool identifier
+</ParamField>
+
+<ParamField path="description" type="fn() -> &str" required>
+  Description for LLM to understand tool purpose
+</ParamField>
+
+<ParamField path="parameters_schema" type="fn() -> Option<Value>">
+  JSON Schema for tool parameters (optional)
+</ParamField>
+
+<ParamField path="execute" type="async fn(&str) -> Result<String, String>" required>
+  Executes the tool with given input
+</ParamField>
+
+### Built-in Tools
+
+MoFA provides several built-in tools:
+
+<Card title="calculator" icon="calculator" href="/api/react-agent#calculator-tool">
+  Evaluates mathematical expressions
+</Card>
+
+<Card title="string_tool" icon="text" href="/api/react-agent#string-tool">
+  String manipulation operations (length, upper, lower, reverse, count)
+</Card>
+
+<Card title="json_tool" icon="brackets-curly" href="/api/react-agent#json-tool">
+  JSON parsing and querying (parse, get, keys, stringify)
+</Card>
+
+<Card title="datetime_tool" icon="clock" href="/api/react-agent#datetime-tool">
+  Date and time operations (now, timestamp, millis)
+</Card>
+
+<Card title="echo_tool" icon="comment" href="/api/react-agent#echo-tool">
+  Simple echo for testing
+</Card>
+
+**Usage:**
+
+```rust
+use mofa_foundation::react::prelude::*;
+
+let agent = ReActAgent::builder()
+    .with_llm(llm_agent)
+    .with_tools(all_builtin_tools())
+    .build_async()
+    .await?;
+```
+
+## Actor Model
+
+### ReActActor
+
+Actor-based implementation for concurrent ReAct execution.
+
+**Message Types:**
+
+<ResponseField name="RunTask">
+  Execute a task and return result
+  
+  ```rust
+  RunTask {
+      task: String,
+      reply: oneshot::Sender<LLMResult<ReActResult>>,
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="RunTaskStreaming">
+  Execute task with streaming step updates
+  
+  ```rust
+  RunTaskStreaming {
+      task: String,
+      step_tx: mpsc::Sender<ReActStep>,
+      reply: oneshot::Sender<LLMResult<ReActResult>>,
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="RegisterTool">
+  Register a new tool dynamically
+  
+  ```rust
+  RegisterTool { tool: Arc<dyn ReActTool> }
+  ```
+</ResponseField>
+
+<ResponseField name="GetStatus">
+  Query current actor status
+</ResponseField>
+
+<ResponseField name="CancelTask">
+  Cancel currently running task
+</ResponseField>
+
+<ResponseField name="Stop">
+  Stop the actor
+</ResponseField>
+
+### ReActActorRef
+
+Convenient wrapper for interacting with ReAct actors.
+
+```rust
+let (actor_ref, handle) = spawn_react_actor(
+    "my-agent",
+    llm_agent,
+    ReActConfig::default(),
+    tools,
+).await?;
+
+// Execute task
+let result = actor_ref.run_task("What is Rust?").await?;
+
+// Stream steps
+let (step_rx, result_rx) = actor_ref.run_task_streaming(task).await?;
+while let Some(step) = step_rx.recv().await {
+    println!("Step: {:?}", step);
+}
+
+// Stop actor
+actor_ref.stop()?;
+```
+
+## Execution Patterns
+
+### ChainAgent
+
+Sequential execution where each agent's output becomes the next agent's input.
+
+```rust
+let chain = ChainAgent::new()
+    .add("researcher", researcher_agent)
+    .add("writer", writer_agent)
+    .add("editor", editor_agent)
+    .with_transform(|prev_output, next_name| {
+        format!("Previous: {}\n\nTask for {}: continue", prev_output, next_name)
+    })
+    .with_continue_on_error(false)
+    .with_verbose(true);
+
+let result = chain.run("Write an article about Rust").await?;
+```
+
+<ParamField path="add" type="fn(name, Arc<ReActAgent>)">
+  Adds a ReAct agent to the chain
+</ParamField>
+
+<ParamField path="add_llm" type="fn(name, Arc<LLMAgent>)">
+  Adds a simple LLM agent to the chain
+</ParamField>
+
+<ParamField path="with_transform" type="Fn(&str, &str) -> String">
+  Transform function to adapt output for next agent
+</ParamField>
+
+<ParamField path="with_continue_on_error" type="bool" default="false">
+  Whether to continue chain if a step fails
+</ParamField>
+
+### ParallelAgent
+
+Concurrent execution with result aggregation.
+
+```rust
+let parallel = ParallelAgent::new()
+    .add("expert1", expert1_agent)
+    .add("expert2", expert2_agent)
+    .add("expert3", expert3_agent)
+    .with_aggregation(AggregationStrategy::LLMSummarize(summarizer))
+    .with_timeout_ms(30000);
+
+let result = parallel.run("Analyze market trends").await?;
+```
+
+<ParamField path="with_aggregation" type="AggregationStrategy">
+  Strategy for combining results:
+  - `Concatenate`: Simple concatenation
+  - `ConcatenateWithSeparator(String)`: Join with separator
+  - `FirstSuccess`: Return first successful result
+  - `CollectAll`: Return all as JSON array
+  - `Vote`: Majority voting
+  - `LLMSummarize(Arc<LLMAgent>)`: LLM-based synthesis
+  - `Custom(Fn)`: Custom aggregation function
+</ParamField>
+
+<ParamField path="with_aggregate_on_partial_failure" type="bool" default="true">
+  Aggregate even if some agents fail
+</ParamField>
+
+<ParamField path="with_timeout_ms" type="u64">
+  Timeout for parallel execution
+</ParamField>
+
+<ParamField path="with_task_template" type="fn(agent_name, template)">
+  Customize task for specific agent using `{task}` placeholder
+</ParamField>
+
+### MapReduceAgent
+
+Map-Reduce pattern for decomposing and aggregating tasks.
+
+```rust
+let map_reduce = MapReduceAgent::new()
+    .with_mapper(|input| {
+        input.lines()
+            .map(|line| format!("Process: {}", line))
+            .collect()
+    })
+    .with_worker(worker_agent)
+    .with_reducer(reducer_agent)
+    .with_concurrency_limit(4);
+
+let result = map_reduce.run("item1\nitem2\nitem3").await?;
+```
+
+<ParamField path="with_mapper" type="Fn(&str) -> Vec<String>" required>
+  Splits input into sub-tasks
+</ParamField>
+
+<ParamField path="with_worker" type="Arc<ReActAgent>" required>
+  Agent to process each sub-task
+</ParamField>
+
+<ParamField path="with_reducer" type="Arc<ReActAgent>" required>
+  Agent to aggregate results
+</ParamField>
+
+<ParamField path="with_concurrency_limit" type="usize">
+  Maximum concurrent workers
+</ParamField>
+
+### AutoAgent
+
+Intelligent agent that automatically selects execution strategy.
+
+```rust
+let auto_agent = AutoAgent::new(llm_agent.clone(), react_agent)
+    .with_auto_mode(true);
+
+// Automatically chooses Direct or ReAct mode based on task complexity
+let result = auto_agent.run("What is 2+2?").await?; // Uses Direct
+let result = auto_agent.run("Search and analyze data").await?; // Uses ReAct
+```
+
+## Examples
+
+### Basic ReAct Agent
+
+```rust
+use mofa_foundation::react::{ReActAgent, ReActTool};
+use async_trait::async_trait;
+use std::sync::Arc;
+
+// Define custom tool
+struct SearchTool;
+
+#[async_trait]
+impl ReActTool for SearchTool {
+    fn name(&self) -> &str { "search" }
+    fn description(&self) -> &str { "Search for information" }
+    
+    async fn execute(&self, input: &str) -> Result<String, String> {
+        Ok(format!("Results for: {}", input))
+    }
+}
+
+// Create agent
+let agent = ReActAgent::builder()
+    .with_llm(llm_agent)
+    .with_tool(Arc::new(SearchTool))
+    .with_max_iterations(5)
+    .build_async()
+    .await?;
+
+// Execute task
+let result = agent.run("Find information about Rust").await?;
+println!("Answer: {}", result.answer);
+```
+
+### Chain Execution
+
+```rust
+use mofa_foundation::react::patterns::*;
+
+let chain = chain_agents(vec![
+    ("researcher", researcher),
+    ("writer", writer),
+    ("editor", editor),
+]);
+
+let result = chain.run("Create article").await?;
+println!("Final: {}", result.final_output);
+```
+
+### Parallel with Summarization
+
+```rust
+let parallel = parallel_agents_with_summarizer(
+    vec![
+        ("expert1", expert1),
+        ("expert2", expert2),
+    ],
+    summarizer_llm,
+);
+
+let result = parallel.run("Analyze topic").await?;
+```
+
+## Error Handling
+
+All ReAct operations return `LLMResult<T>` which is an alias for `Result<T, LLMError>`.
+
+```rust
+match agent.run(task).await {
+    Ok(result) if result.success => {
+        println!("Success: {}", result.answer);
+    }
+    Ok(result) => {
+        eprintln!("Failed: {:?}", result.error);
+    }
+    Err(e) => {
+        eprintln!("Error: {}", e);
+    }
+}
+```
+
+## Source Reference
+
+- Core implementation: `~/workspace/source/crates/mofa-foundation/src/react/core.rs`
+- Actor model: `~/workspace/source/crates/mofa-foundation/src/react/actor.rs`
+- Patterns: `~/workspace/source/crates/mofa-foundation/src/react/patterns.rs`
+- Tools: `~/workspace/source/crates/mofa-foundation/src/react/tools.rs`
+- Examples: `~/workspace/source/examples/react_agent/src/main.rs`

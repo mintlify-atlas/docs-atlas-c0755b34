@@ -1,0 +1,621 @@
+---
+title: "Security Best Practices"
+description: "Secure your MoFA deployments with credential management, sandboxing, and runtime security"
+---
+
+# Security Best Practices
+
+MoFA provides multiple security layers to protect your AI agent deployments. This guide covers credential management, plugin sandboxing, runtime security, and best practices for production deployments.
+
+## Credential Management
+
+### Environment Variables
+
+Store API keys and secrets in environment variables:
+
+```bash
+# .env file (NEVER commit to version control)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+DATABASE_URL=postgres://user:pass@localhost/mofa
+JWT_SECRET=your-secret-key
+```
+
+```rust
+use std::env;
+
+let api_key = env::var("OPENAI_API_KEY")
+    .expect("OPENAI_API_KEY must be set");
+
+let provider = OpenAIProvider::new(&api_key);
+```
+
+### Secret Management Systems
+
+For production, use dedicated secret managers:
+
+```rust
+// AWS Secrets Manager
+use aws_sdk_secretsmanager::Client;
+
+async fn get_api_key() -> Result<String> {
+    let client = Client::new(&aws_config::load_from_env().await);
+    let secret = client
+        .get_secret_value()
+        .secret_id("mofa/openai-key")
+        .send()
+        .await?;
+    
+    Ok(secret.secret_string().unwrap().to_string())
+}
+```
+
+```rust
+// HashiCorp Vault
+use vaultrs::client::{VaultClient, VaultClientSettingsBuilder};
+
+async fn get_database_url() -> Result<String> {
+    let client = VaultClient::new(
+        VaultClientSettingsBuilder::default()
+            .address("https://vault.example.com")
+            .token(env::var("VAULT_TOKEN")?)
+            .build()?
+    )?;
+    
+    let secret: HashMap<String, String> = client
+        .kv2("secret")
+        .read("mofa/database")
+        .await?;
+    
+    Ok(secret.get("url").unwrap().clone())
+}
+```
+
+### Credential Rotation
+
+Implement automatic credential rotation:
+
+```rust
+use tokio::time::{interval, Duration};
+
+struct RotatingCredentials {
+    api_key: RwLock<String>,
+}
+
+impl RotatingCredentials {
+    async fn start_rotation(&self) {
+        let mut interval = interval(Duration::from_secs(3600)); // Every hour
+        
+        loop {
+            interval.tick().await;
+            
+            match self.fetch_new_key().await {
+                Ok(new_key) => {
+                    *self.api_key.write().await = new_key;
+                    info!("API key rotated successfully");
+                }
+                Err(e) => {
+                    error!("Failed to rotate key: {}", e);
+                }
+            }
+        }
+    }
+    
+    async fn fetch_new_key(&self) -> Result<String> {
+        // Fetch from secret manager
+        get_api_key().await
+    }
+}
+```
+
+## Rhai Script Sandboxing
+
+Rhai scripts provide runtime programmability but require careful configuration:
+
+### Resource Limits
+
+```rust
+use rhai::{Engine, OptimizationLevel};
+
+let mut engine = Engine::new();
+
+// Set operation limits
+engine.set_max_operations(10_000);        // Max operations per script
+engine.set_max_expr_depths(32, 64);      // Expression depth limits
+engine.set_max_call_levels(16);          // Max function call depth
+engine.set_max_string_size(1_000_000);   // Max string size (1MB)
+engine.set_max_array_size(10_000);       // Max array elements
+engine.set_max_map_size(10_000);         // Max map entries
+
+// Disable dangerous features
+engine.set_optimization_level(OptimizationLevel::Simple);
+```
+
+### Function Whitelisting
+
+```rust
+let mut engine = Engine::new_raw();  // Start with no built-ins
+
+// Only register safe functions
+engine.register_fn("safe_add", |a: i64, b: i64| a + b);
+engine.register_fn("safe_multiply", |a: i64, b: i64| a * b);
+
+// DO NOT register:
+// - File I/O functions
+// - Network functions
+// - System commands
+// - eval() or similar
+```
+
+### Script Validation
+
+```rust
+use rhai::{Engine, AST};
+
+fn validate_script(engine: &Engine, script: &str) -> Result<AST> {
+    // Parse script (doesn't execute)
+    let ast = engine.compile(script)
+        .map_err(|e| format!("Parse error: {}", e))?;
+    
+    // Check for disallowed patterns
+    let script_lower = script.to_lowercase();
+    if script_lower.contains("eval") {
+        return Err("'eval' is not allowed".into());
+    }
+    if script_lower.contains("import") {
+        return Err("'import' is not allowed".into());
+    }
+    
+    // Verify AST structure
+    // (custom validation logic)
+    
+    Ok(ast)
+}
+```
+
+### Execution Timeout
+
+```rust
+use tokio::time::timeout;
+
+async fn execute_script_safely(
+    engine: &Engine,
+    script: &str,
+) -> Result<Dynamic> {
+    let ast = validate_script(engine, script)?;
+    
+    // Execute with timeout
+    let result = timeout(
+        Duration::from_secs(5),
+        async {
+            engine.eval_ast::<Dynamic>(&ast)
+        }
+    ).await;
+    
+    match result {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(e)) => Err(format!("Script error: {}", e).into()),
+        Err(_) => Err("Script timeout".into()),
+    }
+}
+```
+
+## WASM Plugin Sandboxing
+
+WASM provides strong isolation for untrusted plugins:
+
+### WASI Configuration
+
+```rust
+use wasmtime::*;
+
+let engine = Engine::default();
+let mut linker = Linker::new(&engine);
+
+// Configure WASI with restricted permissions
+let wasi = WasiCtxBuilder::new()
+    .inherit_stdio()  // Allow stdout/stderr only
+    // .inherit_args()  // DO NOT inherit args
+    // .inherit_env()   // DO NOT inherit env vars
+    .preopened_dir(
+        Dir::open_ambient_dir("/tmp/plugin-data", ambient_authority())?,
+        "/data",  // Only allow access to specific directory
+    )?
+    .build();
+
+wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
+```
+
+### Resource Limits
+
+```rust
+let mut config = Config::new();
+
+// Memory limits
+config.max_wasm_stack(512 * 1024);      // 512KB stack
+config.static_memory_maximum_size(64 * 1024 * 1024);  // 64MB max
+
+// CPU limits
+config.consume_fuel(true);              // Enable fuel metering
+
+let engine = Engine::new(&config)?;
+let mut store = Store::new(&engine, wasi);
+
+// Set fuel limit (approximate instruction count)
+store.add_fuel(1_000_000)?;  // 1M instructions
+```
+
+### Plugin Verification
+
+```rust
+use sha2::{Sha256, Digest};
+
+struct PluginMetadata {
+    name: String,
+    version: String,
+    sha256: String,
+    author: String,
+    permissions: Vec<String>,
+}
+
+fn verify_plugin(wasm_bytes: &[u8], metadata: &PluginMetadata) -> Result<()> {
+    // Verify checksum
+    let mut hasher = Sha256::new();
+    hasher.update(wasm_bytes);
+    let hash = format!("{:x}", hasher.finalize());
+    
+    if hash != metadata.sha256 {
+        return Err("Plugin checksum mismatch".into());
+    }
+    
+    // Verify signature (if using code signing)
+    verify_signature(wasm_bytes, &metadata.author)?;
+    
+    // Check permissions
+    if metadata.permissions.contains(&"network".to_string()) {
+        warn!("Plugin requests network access: {}", metadata.name);
+        // Prompt user or check policy
+    }
+    
+    Ok(())
+}
+```
+
+## Network Security
+
+### TLS for LLM APIs
+
+```rust
+use reqwest::Client;
+use std::time::Duration;
+
+let client = Client::builder()
+    .use_rustls_tls()                    // Use Rustls for TLS
+    .min_tls_version(reqwest::tls::Version::TLS_1_2)
+    .timeout(Duration::from_secs(30))
+    .build()?;
+
+let provider = OpenAIProvider::with_client(api_key, client);
+```
+
+### Certificate Pinning
+
+```rust
+use reqwest::Certificate;
+
+let cert_pem = include_str!("../certs/api.openai.com.pem");
+let cert = Certificate::from_pem(cert_pem.as_bytes())?;
+
+let client = Client::builder()
+    .add_root_certificate(cert)
+    .build()?;
+```
+
+### Request Rate Limiting
+
+```rust
+use governor::{Quota, RateLimiter};
+use std::num::NonZeroU32;
+
+struct SecureLLMProvider {
+    provider: Box<dyn LLMProvider>,
+    limiter: RateLimiter<NotKeyed, InMemoryState, DefaultClock>,
+}
+
+impl SecureLLMProvider {
+    fn new(provider: Box<dyn LLMProvider>, requests_per_minute: u32) -> Self {
+        let quota = Quota::per_minute(NonZeroU32::new(requests_per_minute).unwrap());
+        let limiter = RateLimiter::direct(quota);
+        
+        Self { provider, limiter }
+    }
+    
+    async fn chat(&self, prompt: &str) -> Result<String> {
+        // Wait for rate limit
+        self.limiter.until_ready().await;
+        
+        // Make request
+        self.provider.chat(prompt).await
+    }
+}
+```
+
+## Database Security
+
+### Connection Encryption
+
+```rust
+// PostgreSQL with SSL
+let store = PostgresStore::connect(
+    "postgres://user:pass@localhost/mofa?sslmode=require"
+).await?;
+
+// MySQL with TLS
+let store = MySqlStore::connect(
+    "mysql://user:pass@localhost/mofa?ssl-mode=REQUIRED"
+).await?;
+```
+
+### Prepared Statements
+
+MoFA's persistence layer uses parameterized queries:
+
+```rust
+// ✅ SAFE: Uses prepared statement
+let message = store.get_message(message_id).await?;
+
+// ❌ UNSAFE: Never construct SQL from user input
+// let query = format!("SELECT * FROM messages WHERE id = '{}'", user_input);
+// sqlx::query(&query).execute(&pool).await?;
+```
+
+### Row-Level Security
+
+```sql
+-- PostgreSQL RLS
+ALTER TABLE entity_llm_message ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY message_isolation ON entity_llm_message
+    USING (tenant_id = current_setting('app.current_tenant')::uuid);
+```
+
+```rust
+// Set tenant context before queries
+let query = "SET app.current_tenant = $1";
+sqlx::query(query)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await?;
+
+// Now all queries are scoped to this tenant
+let messages = store.get_session_messages(session_id).await?;
+```
+
+## Distributed Security
+
+### mTLS for Dora Nodes
+
+```rust
+use mofa_runtime::dora_adapter::DistributedConfig;
+
+let config = DistributedConfig {
+    coordinator_addr: "https://coordinator:4000".to_string(),
+    tls_cert_path: Some("/certs/client.crt".into()),
+    tls_key_path: Some("/certs/client.key".into()),
+    tls_ca_path: Some("/certs/ca.crt".into()),
+    ..Default::default()
+};
+```
+
+### Message Authentication
+
+```rust
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
+
+fn sign_message(message: &[u8], secret: &[u8]) -> Vec<u8> {
+    let mut mac = HmacSha256::new_from_slice(secret).unwrap();
+    mac.update(message);
+    mac.finalize().into_bytes().to_vec()
+}
+
+fn verify_message(message: &[u8], signature: &[u8], secret: &[u8]) -> bool {
+    let mut mac = HmacSha256::new_from_slice(secret).unwrap();
+    mac.update(message);
+    mac.verify_slice(signature).is_ok()
+}
+```
+
+## Input Validation
+
+### Prompt Injection Prevention
+
+```rust
+fn sanitize_user_input(input: &str) -> String {
+    // Remove potential injection patterns
+    let sanitized = input
+        .replace("\n\n---", "")  // Common delimiter
+        .replace("system:", "")   // Prevent system role injection
+        .replace("<|im_sep|>", ""); // Remove special tokens
+    
+    // Truncate to reasonable length
+    sanitized.chars().take(10_000).collect()
+}
+
+fn validate_prompt(prompt: &str) -> Result<()> {
+    if prompt.is_empty() {
+        return Err("Empty prompt".into());
+    }
+    
+    if prompt.len() > 50_000 {
+        return Err("Prompt too long".into());
+    }
+    
+    // Check for suspicious patterns
+    let suspicious = [
+        "ignore previous instructions",
+        "disregard all previous",
+        "you are now in developer mode",
+    ];
+    
+    for pattern in &suspicious {
+        if prompt.to_lowercase().contains(pattern) {
+            warn!("Suspicious prompt pattern detected: {}", pattern);
+        }
+    }
+    
+    Ok(())
+}
+```
+
+### Schema Validation
+
+```rust
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+struct UserInput {
+    #[schemars(length(min = 1, max = 1000))]
+    query: String,
+    
+    #[schemars(range(min = 0.0, max = 2.0))]
+    temperature: f32,
+    
+    #[schemars(length(max = 10))]
+    tags: Vec<String>,
+}
+
+fn validate_input(json: &str) -> Result<UserInput> {
+    let input: UserInput = serde_json::from_str(json)?;
+    
+    // Validation is automatic via schema constraints
+    Ok(input)
+}
+```
+
+## Audit Logging
+
+### Structured Logging
+
+```rust
+use tracing::{info, warn, error};
+
+#[instrument(
+    skip(agent, user_input),
+    fields(
+        user_id = %user_id,
+        agent_id = %agent.id(),
+        input_length = user_input.len()
+    )
+)]
+async fn process_user_request(
+    agent: &Agent,
+    user_id: Uuid,
+    user_input: &str,
+) -> Result<String> {
+    info!("Processing user request");
+    
+    let result = agent.chat(user_input).await?;
+    
+    info!(
+        response_length = result.len(),
+        "Request completed successfully"
+    );
+    
+    Ok(result)
+}
+```
+
+### Security Event Logging
+
+```rust
+struct SecurityEvent {
+    timestamp: DateTime<Utc>,
+    event_type: String,
+    severity: String,
+    user_id: Option<Uuid>,
+    details: HashMap<String, String>,
+}
+
+impl SecurityEvent {
+    fn log_suspicious_activity(user_id: Uuid, reason: &str) {
+        let event = SecurityEvent {
+            timestamp: Utc::now(),
+            event_type: "suspicious_activity".to_string(),
+            severity: "warning".to_string(),
+            user_id: Some(user_id),
+            details: [
+                ("reason".to_string(), reason.to_string()),
+            ].iter().cloned().collect(),
+        };
+        
+        warn!(
+            timestamp = %event.timestamp,
+            event_type = %event.event_type,
+            severity = %event.severity,
+            user_id = %user_id,
+            reason = %reason,
+            "Security event logged"
+        );
+        
+        // Send to SIEM
+        send_to_siem(event);
+    }
+}
+```
+
+## Production Checklist
+
+- [ ] API keys stored in environment variables or secret manager
+- [ ] Credential rotation implemented
+- [ ] Rhai scripts have resource limits configured
+- [ ] WASM plugins use WASI sandboxing
+- [ ] TLS enabled for all external connections
+- [ ] Database connections encrypted
+- [ ] Input validation on all user inputs
+- [ ] Rate limiting configured
+- [ ] Audit logging enabled
+- [ ] Security monitoring alerts configured
+- [ ] Regular security updates scheduled
+- [ ] Secrets never logged or in error messages
+- [ ] Different credentials for dev/staging/prod
+- [ ] Row-level security for multi-tenant databases
+
+## Security Updates
+
+Stay informed about security updates:
+
+1. **Watch the repository**: Enable notifications for security advisories
+2. **Subscribe to releases**: Monitor new releases for security patches
+3. **Review SECURITY.md**: Check the security policy regularly
+4. **Update dependencies**: Run `cargo audit` to check for vulnerabilities
+
+```bash
+# Install cargo-audit
+cargo install cargo-audit
+
+# Check for vulnerabilities
+cargo audit
+
+# Update dependencies
+cargo update
+```
+
+## Reporting Security Issues
+
+Report security vulnerabilities privately:
+
+1. **GitHub Security Advisories**: https://github.com/mofa-org/mofa/security/advisories
+2. **Email**: security@mofa.ai
+3. **Do not** create public issues for security vulnerabilities
+
+See [SECURITY.md](https://github.com/mofa-org/mofa/blob/main/SECURITY.md) for full details.
+
+## See Also
+
+- [Persistence](/advanced/persistence) - Secure database configurations
+- [Distributed Runtime](/advanced/distributed-runtime) - Secure distributed communication
+- [Monitoring](/advanced/monitoring) - Security event monitoring

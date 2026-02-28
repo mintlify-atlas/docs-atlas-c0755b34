@@ -1,0 +1,786 @@
+---
+title: Rhai Scripting Guide
+description: Complete guide to writing Rhai scripts for MoFA plugins, workflows, and rules
+---
+
+# Rhai Scripting Guide
+
+Rhai is a lightweight, high-performance scripting language designed for embedding in Rust applications. MoFA uses Rhai for runtime plugins, workflow orchestration, and dynamic business rules.
+
+## Language Basics
+
+### Variables and Types
+
+```rhai
+// Variables
+let name = "Alice";
+let age = 30;
+let height = 5.8;
+let is_active = true;
+
+// Constants
+const MAX_RETRIES = 3;
+const API_VERSION = "v1";
+
+// Type inference
+let auto_typed = 42;           // Integer
+let also_auto = "text";        // String
+let mixed = [1, "two", 3.0];  // Array with mixed types
+```
+
+### Data Types
+
+<CodeGroup>
+  ```rhai Numbers
+  // Integers
+  let int = 42;
+  let negative = -10;
+  let hex = 0xFF;      // 255
+  let binary = 0b1010; // 10
+
+  // Floats
+  let pi = 3.14159;
+  let scientific = 1.5e-3;
+
+  // Operations
+  let sum = 10 + 5;       // 15
+  let diff = 10 - 5;      // 5
+  let product = 10 * 5;   // 50
+  let quotient = 10 / 5;  // 2
+  let remainder = 10 % 3; // 1
+  let power = 2 ** 3;     // 8
+  ```
+
+  ```rhai Strings
+  // String literals
+  let single = 'Hello';
+  let double = "World";
+  let multiline = `
+      This is a
+      multiline string
+  `;
+
+  // String interpolation
+  let name = "Alice";
+  let greeting = `Hello, ${name}!`;
+
+  // String operations
+  let concat = "Hello" + " " + "World";
+  let len = greeting.len();
+  let upper = greeting.to_upper();
+  let lower = greeting.to_lower();
+  ```
+
+  ```rhai Arrays
+  // Array creation
+  let numbers = [1, 2, 3, 4, 5];
+  let mixed = [1, "two", 3.0, true];
+  let empty = [];
+
+  // Array access
+  let first = numbers[0];  // 1
+  let last = numbers[-1];  // 5
+
+  // Array methods
+  numbers.push(6);         // [1, 2, 3, 4, 5, 6]
+  let popped = numbers.pop(); // 6
+  let len = numbers.len(); // 5
+
+  // Array iteration
+  for item in numbers {
+      print(item);
+  }
+  ```
+
+  ```rhai Objects
+  // Object maps
+  let person = #{
+      name: "Alice",
+      age: 30,
+      email: "alice@example.com"
+  };
+
+  // Property access
+  let name = person.name;
+  let age = person["age"];
+
+  // Add/modify properties
+  person.city = "New York";
+  person["country"] = "USA";
+
+  // Check existence
+  if person.contains("email") {
+      print(person.email);
+  }
+  ```
+</CodeGroup>
+
+## Control Flow
+
+### Conditionals
+
+```rhai
+// If-else
+if age >= 18 {
+    print("Adult");
+} else {
+    print("Minor");
+}
+
+// If-else if-else
+if score >= 90 {
+    print("A");
+} else if score >= 80 {
+    print("B");
+} else if score >= 70 {
+    print("C");
+} else {
+    print("F");
+}
+
+// Ternary operator
+let status = is_active ? "active" : "inactive";
+
+// Switch (pattern matching)
+switch value {
+    0 => print("Zero"),
+    1 => print("One"),
+    2 | 3 => print("Two or Three"),
+    _ => print("Other")
+}
+```
+
+### Loops
+
+<CodeGroup>
+  ```rhai For Loop
+  // Iterate over array
+  let items = ["apple", "banana", "cherry"];
+  for item in items {
+      print(item);
+  }
+
+  // Iterate over range
+  for i in 0..10 {
+      print(i);  // 0 to 9
+  }
+
+  // Inclusive range
+  for i in 0..=10 {
+      print(i);  // 0 to 10
+  }
+
+  // Iterate with index
+  for (i, item) in items.enumerate() {
+      print(`${i}: ${item}`);
+  }
+  ```
+
+  ```rhai While Loop
+  // While loop
+  let count = 0;
+  while count < 10 {
+      print(count);
+      count += 1;
+  }
+
+  // Loop with condition
+  let running = true;
+  while running {
+      // Do work
+      if should_stop() {
+          running = false;
+      }
+  }
+  ```
+
+  ```rhai Loop Control
+  // Break
+  for i in 0..100 {
+      if i == 10 {
+          break;  // Exit loop
+      }
+      print(i);
+  }
+
+  // Continue
+  for i in 0..10 {
+      if i % 2 == 0 {
+          continue;  // Skip even numbers
+      }
+      print(i);  // Only prints odd numbers
+  }
+  ```
+</CodeGroup>
+
+## Functions
+
+### Function Definition
+
+```rhai examples/rhai_scripting/src/main.rs
+// Simple function
+fn greet(name) {
+    "Hello, " + name + "!"
+}
+
+// Function with multiple parameters
+fn add(a, b) {
+    a + b
+}
+
+// Function with default behavior
+fn multiply(a, b) {
+    if b == () {
+        b = 1;  // Default value
+    }
+    a * b
+}
+
+// Recursive function
+fn factorial(n) {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+// Function returning object
+fn create_user(name, age) {
+    #{
+        name: name,
+        age: age,
+        created_at: now()
+    }
+}
+```
+
+### Return Values
+
+```rhai
+// Explicit return
+fn get_status(code) {
+    if code == 200 {
+        return "OK";
+    } else if code == 404 {
+        return "Not Found";
+    }
+    return "Unknown";
+}
+
+// Implicit return (last expression)
+fn double(x) {
+    x * 2  // Automatically returned
+}
+
+// Multiple returns
+fn divide(a, b) {
+    if b == 0 {
+        return ();
+    }
+    a / b
+}
+```
+
+## Error Handling
+
+```rhai
+// Throw errors
+fn validate_age(age) {
+    if age < 0 {
+        throw "Age cannot be negative";
+    }
+    if age > 150 {
+        throw "Age is unrealistic";
+    }
+    age
+}
+
+// Try-catch pattern
+fn safe_divide(a, b) {
+    if b == 0 {
+        return ();
+    }
+    a / b
+}
+
+let result = safe_divide(10, 0);
+if result == () {
+    print("Division by zero");
+} else {
+    print(`Result: ${result}`);
+}
+```
+
+## MoFA Built-in Functions
+
+### Logging
+
+```rhai
+// Basic logging
+log("This is an info message");
+debug("Debug information");
+warn("Warning message");
+error("Error occurred");
+
+// Formatted logging
+let user_id = 123;
+log(`User ${user_id} logged in`);
+```
+
+### JSON Operations
+
+```rhai examples/rhai_scripting/src/main.rs
+// Parse JSON string
+let json_str = '{"name":"Alice","age":30}';
+let obj = parse_json(json_str);
+print(obj.name);  // "Alice"
+
+// Convert to JSON
+let data = #{
+    name: "Bob",
+    age: 25,
+    tags: ["user", "active"]
+};
+let json = to_json(data);
+print(json);  // {"name":"Bob","age":25,"tags":["user","active"]}
+```
+
+### String Functions
+
+```rhai examples/rhai_scripting/src/main.rs
+let text = "  Hello World  ";
+
+// Trimming
+let trimmed = trim(text);        // "Hello World"
+let trim_start = trim_start(text); // "Hello World  "
+let trim_end = trim_end(text);   // "  Hello World"
+
+// Case conversion
+let upper = upper(text);         // "  HELLO WORLD  "
+let lower = lower(text);         // "  hello world  "
+
+// String checking
+let starts = starts_with(text, "  H");  // true
+let ends = ends_with(text, "d  ");      // true
+let contains = contains(text, "World"); // true
+
+// Replacement
+let replaced = replace(text, "World", "Rust");
+```
+
+### Time Functions
+
+```rhai
+// Current timestamp (milliseconds since epoch)
+let timestamp = now();
+print(`Current time: ${timestamp}`);
+
+// Use in data
+let event = #{
+    id: "evt_001",
+    created_at: now(),
+    data: "some data"
+};
+```
+
+### Type Conversion
+
+```rhai
+// To string
+let str = to_string(42);      // "42"
+let str2 = to_string(3.14);   // "3.14"
+
+// To integer
+let int = to_int("42");       // 42
+let int2 = to_int(3.14);      // 3
+
+// To float
+let float = to_float("3.14"); // 3.14
+let float2 = to_float(42);    // 42.0
+```
+
+## Workflow Scripting
+
+### Task Nodes
+
+```rhai examples/rhai_scripting/src/main.rs
+// Simple task
+fn validate_input(input) {
+    log("Validating input...");
+    if input.value < 0 {
+        throw "Value cannot be negative";
+    }
+    input
+}
+
+// Transform task
+fn transform_data(input) {
+    log("Transforming data...");
+    #{
+        original: input.value,
+        doubled: input.value * 2,
+        squared: input.value * input.value,
+        timestamp: now()
+    }
+}
+
+// Format task
+fn format_output(input) {
+    log("Formatting output...");
+    `Result: original=${input.original}, doubled=${input.doubled}, squared=${input.squared}`
+}
+```
+
+### Conditional Nodes
+
+```rhai examples/rhai_scripting/src/main.rs
+// Routing based on score
+fn check_score(input) {
+    let score = input.score;
+
+    if score >= 90 {
+        #{score: score, rating: "excellent"}
+    } else if score >= 70 {
+        #{score: score, rating: "good"}
+    } else if score >= 60 {
+        #{score: score, rating: "pass"}
+    } else {
+        #{score: score, rating: "fail"}
+    }
+}
+```
+
+## Rule Engine Scripting
+
+### Rule Conditions
+
+```rhai examples/rhai_scripting/src/main.rs
+// Simple condition
+user.is_vip == true
+
+// Complex condition
+user.is_vip == true && order.total >= 1000
+
+// Multi-line condition
+let content = lower(text);
+contains(content, "spam") ||
+contains(content, "click here") ||
+contains(content, "free money")
+
+// Function-based condition
+fn is_eligible(user, order) {
+    user.age >= 18 &&
+    user.verified == true &&
+    order.total >= 100
+}
+
+is_eligible(user, order)
+```
+
+### Rule Actions
+
+```rhai examples/rhai_scripting/src/main.rs
+// Discount calculation
+let discount = 0.8;
+let final_price = order.total * discount;
+#{
+    rule: "vip_discount",
+    discount_rate: discount,
+    original_price: order.total,
+    final_price: final_price,
+    saved: order.total - final_price
+}
+
+// Content moderation
+#{
+    status: "rejected",
+    reason: "Suspected spam",
+    confidence: 0.95
+}
+
+// Data enrichment
+#{
+    user: user,
+    enriched_data: #{
+        segment: calculate_segment(user),
+        lifetime_value: calculate_ltv(user),
+        risk_score: calculate_risk(user)
+    }
+}
+```
+
+## Tool Scripting
+
+### Dynamic Tools
+
+```rhai examples/rhai_scripting/src/main.rs
+// Calculator tool
+let a = params.a;
+let b = params.b;
+let op = params.operation;
+
+let result = if op == "add" { a + b }
+else if op == "sub" { a - b }
+else if op == "mul" { a * b }
+else if op == "div" {
+    if b == 0.0 { throw "Division by zero"; }
+    a / b
+}
+else if op == "pow" {
+    let r = 1.0;
+    for i in 0..b.to_int() { r *= a; }
+    r
+}
+else { throw "Unknown operation: " + op; };
+
+#{
+    operation: op,
+    a: a,
+    b: b,
+    result: result,
+    expression: `${a} ${op} ${b} = ${result}`
+}
+```
+
+### String Processing Tool
+
+```rhai examples/rhai_scripting/src/main.rs
+let text = params.text;
+let ops = params.operations;
+
+for op in ops {
+    if op == "trim" {
+        text = trim(text);
+    } else if op == "upper" {
+        text = upper(text);
+    } else if op == "lower" {
+        text = lower(text);
+    } else if op == "reverse" {
+        let chars = text.chars();
+        let reversed = "";
+        for i in range(0, chars.len()) {
+            reversed = chars[chars.len() - 1 - i] + reversed;
+        }
+        text = reversed;
+    }
+}
+
+#{
+    original: params.text,
+    processed: text,
+    operations: ops
+}
+```
+
+## Advanced Patterns
+
+### Caching
+
+```rhai
+// Global cache
+let cache = #{};
+let cache_hits = 0;
+let cache_misses = 0;
+
+fn get_with_cache(key) {
+    if cache.contains(key) {
+        cache_hits += 1;
+        return cache[key];
+    }
+
+    cache_misses += 1;
+    let value = expensive_computation(key);
+    cache[key] = value;
+    value
+}
+
+fn get_cache_stats() {
+    #{
+        hits: cache_hits,
+        misses: cache_misses,
+        hit_rate: cache_hits / (cache_hits + cache_misses)
+    }
+}
+```
+
+### State Machines
+
+```rhai
+let state = "idle";
+
+fn transition(event) {
+    if state == "idle" && event == "start" {
+        state = "running";
+        log("Started");
+    } else if state == "running" && event == "pause" {
+        state = "paused";
+        log("Paused");
+    } else if state == "paused" && event == "resume" {
+        state = "running";
+        log("Resumed");
+    } else if state == "running" && event == "stop" {
+        state = "idle";
+        log("Stopped");
+    } else {
+        throw `Invalid transition: ${state} -> ${event}`;
+    }
+    state
+}
+```
+
+### Data Pipelines
+
+```rhai
+// Pipeline functions
+fn filter_active(items) {
+    let result = [];
+    for item in items {
+        if item.active {
+            result.push(item);
+        }
+    }
+    result
+}
+
+fn enrich_items(items) {
+    let result = [];
+    for item in items {
+        item.enriched_at = now();
+        item.score = calculate_score(item);
+        result.push(item);
+    }
+    result
+}
+
+fn sort_by_score(items) {
+    // Simple bubble sort
+    let arr = items;
+    let len = arr.len();
+    for i in 0..len {
+        for j in 0..(len - i - 1) {
+            if arr[j].score < arr[j + 1].score {
+                let temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+    arr
+}
+
+// Execute pipeline
+fn execute(input) {
+    let data = parse_json(input);
+    let filtered = filter_active(data.items);
+    let enriched = enrich_items(filtered);
+    let sorted = sort_by_score(enriched);
+
+    to_json(#{
+        items: sorted,
+        count: sorted.len(),
+        processed_at: now()
+    })
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive names">
+    ```rhai
+    // Good
+    fn calculate_user_discount(user, order) { ... }
+
+    // Bad
+    fn calc(u, o) { ... }
+    ```
+  </Accordion>
+
+  <Accordion title="Validate inputs early">
+    ```rhai
+    fn process_order(order) {
+        // Validate first
+        if order.items.len() == 0 {
+            throw "Order must have items";
+        }
+        if order.total <= 0 {
+            throw "Invalid order total";
+        }
+
+        // Then process
+        // ...
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use constants for magic numbers">
+    ```rhai
+    // Good
+    const MAX_RETRIES = 3;
+    const TIMEOUT_MS = 5000;
+
+    if retry_count >= MAX_RETRIES {
+        throw "Max retries exceeded";
+    }
+
+    // Bad
+    if retry_count >= 3 { ... }
+    ```
+  </Accordion>
+
+  <Accordion title="Add comments for complex logic">
+    ```rhai
+    // Calculate weighted score based on multiple factors
+    // Formula: (quality * 0.5) + (speed * 0.3) + (cost * 0.2)
+    fn calculate_score(quality, speed, cost) {
+        (quality * 0.5) + (speed * 0.3) + (cost * 0.2)
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Return early for error cases">
+    ```rhai
+    fn process_data(data) {
+        // Handle errors first
+        if data == () {
+            return ();
+        }
+        if data.len() == 0 {
+            return [];
+        }
+
+        // Main logic
+        // ...
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Cache Expensive Operations" icon="bolt">
+    Store results of expensive computations in global variables
+  </Card>
+  <Card title="Avoid Deep Nesting" icon="layer-group">
+    Keep function nesting shallow for better performance
+  </Card>
+  <Card title="Use Early Returns" icon="arrow-right-from-bracket">
+    Exit functions early to avoid unnecessary computation
+  </Card>
+  <Card title="Minimize Array Copies" icon="copy">
+    Modify arrays in place when possible instead of creating new ones
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Runtime Plugins" icon="bolt" href="/plugins/runtime-plugins">
+    Build complete Rhai plugins
+  </Card>
+  <Card title="Workflow Guide" icon="diagram-project" href="/workflows/overview">
+    Create dynamic workflows with Rhai
+  </Card>
+</CardGroup>

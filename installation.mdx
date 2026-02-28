@@ -1,0 +1,563 @@
+---
+title: Installation
+description: Install MoFA and set up your development environment
+---
+
+## Prerequisites
+
+Before installing MoFA, ensure you have the following:
+
+<CardGroup cols={2}>
+  <Card title="Rust toolchain" icon="rust">
+    Rust 1.85 or newer (edition 2024)
+  </Card>
+  <Card title="Git" icon="git">
+    For cloning the repository
+  </Card>
+  <Card title="LLM API key" icon="key">
+    OpenAI, Anthropic, or other provider
+  </Card>
+  <Card title="Build tools" icon="hammer">
+    C compiler and linker (platform-specific)
+  </Card>
+</CardGroup>
+
+## Install Rust
+
+MoFA requires Rust 1.85 or newer. If you don't have Rust installed:
+
+<Tabs>
+  <Tab title="Linux / macOS">
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    rustup default stable
+    ```
+
+    Add Cargo to your PATH (usually automatic):
+
+    ```bash
+    source $HOME/.cargo/env
+    ```
+  </Tab>
+
+  <Tab title="Windows">
+    1. Download and run [rustup-init.exe](https://rustup.rs)
+    2. Follow the installation prompts
+    3. Restart your terminal
+
+    <Note>
+    Windows users need the Microsoft C++ Build Tools. The Rust installer will guide you through this.
+    </Note>
+  </Tab>
+
+  <Tab title="macOS (Homebrew)">
+    ```bash
+    brew install rustup
+    rustup-init
+    rustup default stable
+    ```
+  </Tab>
+</Tabs>
+
+### Verify installation
+
+```bash
+rustc --version   # Should show 1.85.0 or newer
+cargo --version
+```
+
+If the version is below 1.85, update Rust:
+
+```bash
+rustup update stable
+```
+
+## Get MoFA source
+
+MoFA is currently distributed via source code:
+
+```bash
+git clone https://github.com/mofa-org/mofa.git
+cd mofa
+```
+
+<Note>
+**Note**: A crates.io package (`mofa-sdk`) is available, but we recommend using the latest source during active development.
+</Note>
+
+## Build MoFA
+
+<Steps>
+  <Step title="Build the workspace">
+    Build all crates in release mode for optimal performance:
+
+    ```bash
+    cargo build --release
+    ```
+
+    This compiles:
+    - `mofa-kernel` - Microkernel core
+    - `mofa-foundation` - Business logic layer
+    - `mofa-runtime` - Agent lifecycle management
+    - `mofa-plugins` - Plugin system
+    - `mofa-sdk` - Main SDK
+    - `mofa-cli` - Command-line tools
+
+    <Tip>
+    First build may take 5-10 minutes as Cargo downloads and compiles dependencies.
+    </Tip>
+  </Step>
+
+  <Step title="Run tests">
+    Verify everything works:
+
+    ```bash
+    cargo test -p mofa-sdk
+    cargo test -p mofa-kernel
+    ```
+
+    All tests should pass. If you see failures, check your Rust version and system configuration.
+  </Step>
+
+  <Step title="Build specific features">
+    MoFA has optional features you can enable:
+
+    ```bash
+    # Build with PostgreSQL persistence
+    cargo build --features persistence-postgres
+
+    # Build with Dora-rs distributed runtime
+    cargo build --features dora
+
+    # Build with monitoring dashboard
+    cargo build --features monitoring
+
+    # Build with all features
+    cargo build --all-features
+    ```
+  </Step>
+</Steps>
+
+## Platform-specific setup
+
+<Tabs>
+  <Tab title="Linux">
+    Install build dependencies:
+
+    <CodeGroup>
+    ```bash Ubuntu/Debian
+    sudo apt update
+    sudo apt install build-essential pkg-config libssl-dev
+    ```
+
+    ```bash Fedora/RHEL
+    sudo dnf install gcc gcc-c++ openssl-devel
+    ```
+
+    ```bash Arch Linux
+    sudo pacman -S base-devel openssl
+    ```
+    </CodeGroup>
+
+    ### Optional: PostgreSQL
+
+    If using persistence features:
+
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install postgresql postgresql-contrib libpq-dev
+
+    # Fedora/RHEL
+    sudo dnf install postgresql postgresql-server postgresql-devel
+    ```
+  </Tab>
+
+  <Tab title="macOS">
+    Install Xcode Command Line Tools:
+
+    ```bash
+    xcode-select --install
+    ```
+
+    ### Optional: PostgreSQL
+
+    ```bash
+    brew install postgresql@14
+    brew services start postgresql@14
+    ```
+
+    ### Optional: Ollama (for local LLMs)
+
+    ```bash
+    brew install ollama
+    ollama serve
+    ```
+  </Tab>
+
+  <Tab title="Windows">
+    Install Visual Studio Build Tools:
+
+    1. Download [Build Tools for Visual Studio](https://visualstudio.microsoft.com/downloads/)
+    2. Run the installer
+    3. Select "Desktop development with C++"
+    4. Install
+
+    ### Optional: PostgreSQL
+
+    Download and install from [PostgreSQL Downloads](https://www.postgresql.org/download/windows/)
+
+    ### Path configuration
+
+    Ensure `%USERPROFILE%\.cargo\bin` is in your PATH:
+
+    ```powershell
+    $env:Path += ";$env:USERPROFILE\.cargo\bin"
+    ```
+  </Tab>
+</Tabs>
+
+## Configure LLM provider
+
+MoFA supports multiple LLM providers. Choose one and set up credentials:
+
+<Tabs>
+  <Tab title="OpenAI">
+    Get an API key from [OpenAI](https://platform.openai.com/api-keys)
+
+    Create `.env` in your project root:
+
+    ```bash
+    OPENAI_API_KEY=sk-...
+    OPENAI_MODEL=gpt-4o           # Optional, default: gpt-4o
+    ```
+
+    Or set environment variables:
+
+    ```bash
+    export OPENAI_API_KEY=sk-...
+    export OPENAI_MODEL=gpt-4o
+    ```
+  </Tab>
+
+  <Tab title="Anthropic">
+    Get an API key from [Anthropic](https://console.anthropic.com/)
+
+    Create `.env`:
+
+    ```bash
+    ANTHROPIC_API_KEY=sk-ant-...
+    ANTHROPIC_MODEL=claude-sonnet-4-5-latest   # Optional
+    ```
+
+    Or set environment variables:
+
+    ```bash
+    export ANTHROPIC_API_KEY=sk-ant-...
+    export ANTHROPIC_MODEL=claude-sonnet-4-5-latest
+    ```
+  </Tab>
+
+  <Tab title="Ollama (Local)">
+    Install and run Ollama:
+
+    ```bash
+    # macOS
+    brew install ollama
+    ollama serve
+
+    # Linux
+    curl -fsSL https://ollama.com/install.sh | sh
+    ollama serve
+    ```
+
+    Pull a model:
+
+    ```bash
+    ollama pull llama3.2
+    ```
+
+    Configure `.env`:
+
+    ```bash
+    OPENAI_API_KEY=ollama          # Any value works
+    OPENAI_BASE_URL=http://localhost:11434/v1
+    OPENAI_MODEL=llama3.2
+    ```
+  </Tab>
+
+  <Tab title="OpenRouter">
+    Get an API key from [OpenRouter](https://openrouter.ai/)
+
+    Configure `.env`:
+
+    ```bash
+    OPENAI_API_KEY=<your_openrouter_key>
+    OPENAI_BASE_URL=https://openrouter.ai/api/v1
+    OPENAI_MODEL=google/gemini-2.0-flash-001  # Or any other model
+    ```
+
+    OpenRouter gives access to:
+    - Google Gemini
+    - Anthropic Claude
+    - Meta Llama
+    - Many other models
+  </Tab>
+</Tabs>
+
+## Optional: Database setup
+
+If you're using persistence features, set up a database:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    Install PostgreSQL (see platform-specific instructions above)
+
+    Create a database:
+
+    ```bash
+    psql -U postgres
+    CREATE DATABASE mofa_dev;
+    CREATE USER mofa WITH PASSWORD 'your_password';
+    GRANT ALL PRIVILEGES ON DATABASE mofa_dev TO mofa;
+    \q
+    ```
+
+    Configure `.env`:
+
+    ```bash
+    DATABASE_URL=postgres://mofa:your_password@localhost/mofa_dev
+    ```
+
+    Build with PostgreSQL feature:
+
+    ```bash
+    cargo build --features persistence-postgres
+    ```
+  </Tab>
+
+  <Tab title="MySQL">
+    Install MySQL, then:
+
+    ```sql
+    CREATE DATABASE mofa_dev;
+    CREATE USER 'mofa'@'localhost' IDENTIFIED BY 'your_password';
+    GRANT ALL PRIVILEGES ON mofa_dev.* TO 'mofa'@'localhost';
+    FLUSH PRIVILEGES;
+    ```
+
+    Configure `.env`:
+
+    ```bash
+    DATABASE_URL=mysql://mofa:your_password@localhost/mofa_dev
+    ```
+
+    Build with MySQL feature:
+
+    ```bash
+    cargo build --features persistence-mysql
+    ```
+  </Tab>
+
+  <Tab title="SQLite">
+    No installation needed! SQLite is embedded.
+
+    Configure `.env`:
+
+    ```bash
+    DATABASE_URL=sqlite:./mofa.db
+    ```
+
+    Build with SQLite feature:
+
+    ```bash
+    cargo build --features persistence-sqlite
+    ```
+
+    <Tip>
+    SQLite is perfect for development and small deployments.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## IDE setup
+
+<Tabs>
+  <Tab title="VS Code">
+    Install recommended extensions:
+
+    1. [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) - Rust language server
+    2. [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) - Debugger
+    3. [crates](https://marketplace.visualstudio.com/items?itemName=serayuzgur.crates) - Dependency management
+
+    Open the workspace:
+
+    ```bash
+    code mofa
+    ```
+
+    rust-analyzer will automatically detect `Cargo.toml` and provide IntelliSense.
+  </Tab>
+
+  <Tab title="RustRover / IntelliJ">
+    1. Install [RustRover](https://www.jetbrains.com/rust/) or IntelliJ IDEA with Rust plugin
+    2. Open the `mofa` directory
+    3. Let the IDE index the project
+
+    The IDE will automatically configure build targets and dependencies.
+  </Tab>
+
+  <Tab title="Neovim / Vim">
+    Use a Rust LSP setup:
+
+    ```vim
+    " With vim-plug
+    Plug 'neovim/nvim-lspconfig'
+    Plug 'simrat39/rust-tools.nvim'
+
+    " Configure rust-analyzer
+    lua << EOF
+    require('rust-tools').setup({})
+    EOF
+    ```
+
+    Or use [AstroNvim](https://astronvim.com/) with Rust support.
+  </Tab>
+</Tabs>
+
+## Verify installation
+
+Run a simple example to confirm everything works:
+
+```bash
+cd examples
+cargo run -p chat_stream
+```
+
+You should see:
+
+```
+========================================
+  MoFA LLM Agent
+========================================
+
+Agent loaded: LLM Agent
+```
+
+<Check>
+If you see this output, your installation is complete!
+</Check>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: could not find 'Cargo.toml'">
+    Make sure you're in the `mofa` directory:
+
+    ```bash
+    cd mofa
+    cargo build
+    ```
+  </Accordion>
+
+  <Accordion title="Error: linking with 'cc' failed">
+    Install C compiler and build tools (see platform-specific setup above).
+
+    **Linux**: `sudo apt install build-essential`
+    
+    **macOS**: `xcode-select --install`
+    
+    **Windows**: Install Visual Studio Build Tools
+  </Accordion>
+
+  <Accordion title="Error: OpenSSL not found">
+    Install OpenSSL development libraries:
+
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install libssl-dev
+
+    # Fedora/RHEL
+    sudo dnf install openssl-devel
+
+    # macOS
+    brew install openssl
+    ```
+  </Accordion>
+
+  <Accordion title="Error: OPENAI_API_KEY not found">
+    Set your API key:
+
+    ```bash
+    export OPENAI_API_KEY=sk-...
+    ```
+
+    Or create a `.env` file:
+
+    ```bash
+    echo "OPENAI_API_KEY=sk-..." > .env
+    ```
+  </Accordion>
+
+  <Accordion title="Rust version too old">
+    Update Rust to 1.85 or newer:
+
+    ```bash
+    rustup update stable
+    rustup default stable
+    rustc --version  # Should show 1.85+
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Feature flags reference
+
+MoFA uses Cargo features for optional functionality:
+
+| Feature | Description |
+|---------|-------------|
+| `default` | Core functionality only |
+| `dora` | Enable Dora-rs distributed runtime |
+| `persistence-postgres` | PostgreSQL database backend |
+| `persistence-mysql` | MySQL database backend |
+| `persistence-sqlite` | SQLite database backend |
+| `monitoring` | Built-in monitoring dashboard |
+| `uniffi` | Multi-language bindings (Python, Java, Swift, Kotlin, Go) |
+| `openai` | OpenAI provider (enabled by default) |
+| `kokoro` | Kokoro TTS engine |
+
+Enable features when building:
+
+```bash
+cargo build --features "dora,persistence-postgres,monitoring"
+```
+
+Or in your `Cargo.toml`:
+
+```toml
+[dependencies]
+mofa-sdk = { version = "0.1", features = ["dora", "persistence-postgres"] }
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Build your first agent in under 10 minutes
+  </Card>
+
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Learn about MoFA's microkernel design
+  </Card>
+
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples">
+    Explore 27+ working examples
+  </Card>
+
+  <Card title="API docs" icon="book" href="https://docs.rs/mofa-sdk">
+    Browse the Rust API reference
+  </Card>
+</CardGroup>
+
+<Tip>
+**Tip**: Join our [Discord community](https://discord.com/invite/hKJZzDMMm9) if you need help with installation or configuration.
+</Tip>

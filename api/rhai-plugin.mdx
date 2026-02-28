@@ -1,0 +1,417 @@
+---
+title: 'RhaiPlugin API'
+description: 'Runtime-programmable plugin using Rhai scripting language'
+---
+
+The `RhaiPlugin` enables runtime programmability through Rhai scripts, allowing hot-reloadable plugin logic without recompilation.
+
+## Overview
+
+Rhai plugins provide:
+
+- **Runtime scripting** - Write plugin logic in Rhai (Rust-like scripting language)
+- **Hot reload** - Update plugin behavior without restarting the agent
+- **Metadata extraction** - Automatic extraction of plugin metadata from script
+- **Performance tracking** - Built-in execution statistics
+- **Safe execution** - Sandboxed script execution environment
+
+## Creating a Rhai Plugin
+
+### From Inline Script
+
+```rust
+use mofa_plugins::rhai_runtime::plugin::RhaiPlugin;
+
+let script = r#"
+    let plugin_name = "hello_plugin";
+    let plugin_version = "1.0.0";
+    let plugin_description = "A simple greeting plugin";
+
+    fn execute(input) {
+        "Hello, " + input + "!"
+    }
+"#;
+
+let plugin = RhaiPlugin::from_content("hello-plugin", script).await?;
+```
+
+### From File
+
+```rust
+let plugin = RhaiPlugin::from_file(
+    "calculator-plugin",
+    Path::new("./plugins/calculator.rhai")
+).await?;
+```
+
+### Using Configuration
+
+```rust
+use mofa_plugins::rhai_runtime::plugin::{RhaiPluginConfig, RhaiPluginSource};
+use mofa_extra::rhai::ScriptEngineConfig;
+
+let config = RhaiPluginConfig {
+    source: RhaiPluginSource::File(PathBuf::from("./plugin.rhai")),
+    engine_config: ScriptEngineConfig::default()
+        .with_max_operations(100_000)
+        .with_max_call_levels(10),
+    initial_context: HashMap::new(),
+    dependencies: vec![],
+    plugin_id: "my-plugin".to_string(),
+};
+
+let plugin = RhaiPlugin::new(config).await?;
+```
+
+## Script Structure
+
+### Metadata Variables
+
+Define plugin metadata at the top of your script:
+
+```rhai
+let plugin_name = "calculator";
+let plugin_version = "2.0.0";
+let plugin_description = "Arithmetic calculator plugin";
+```
+
+### Lifecycle Functions
+
+Optional lifecycle hooks:
+
+```rhai
+// Called during plugin initialization
+fn init() {
+    print("Plugin initialized");
+}
+
+// Called when plugin starts
+fn start() {
+    print("Plugin started");
+}
+
+// Called when plugin stops
+fn stop() {
+    print("Plugin stopped");
+}
+
+// Called during plugin unload
+fn unload() {
+    print("Plugin unloaded");
+}
+```
+
+### Execute Function
+
+The main entry point (required):
+
+```rhai
+fn execute(input) {
+    // Process input and return result
+    let data = parse_json(input);
+    let result = process(data);
+    to_json(result)
+}
+```
+
+## Complete Script Example
+
+```rhai
+// Metadata
+let plugin_name = "calculator";
+let plugin_version = "1.0.0";
+let plugin_description = "Perform arithmetic operations";
+
+// State (persists across calls within same plugin instance)
+let call_count = 0;
+
+// Helper functions
+fn add(a, b) { a + b }
+fn sub(a, b) { a - b }
+fn mul(a, b) { a * b }
+fn div(a, b) { 
+    if b == 0 {
+        throw "Division by zero";
+    }
+    a / b 
+}
+
+// Lifecycle hooks
+fn init() {
+    print("Calculator plugin initialized");
+}
+
+// Main execution
+fn execute(input) {
+    call_count += 1;
+    
+    // Parse input JSON
+    let data = parse_json(input);
+    let operation = data.operation;
+    let a = data.a;
+    let b = data.b;
+    
+    // Perform calculation
+    let result = if operation == "add" {
+        add(a, b)
+    } else if operation == "sub" {
+        sub(a, b)
+    } else if operation == "mul" {
+        mul(a, b)
+    } else if operation == "div" {
+        div(a, b)
+    } else {
+        throw "Unknown operation: " + operation;
+    };
+    
+    // Return result
+    `Result: ${result} (call #${call_count})`
+}
+```
+
+## RhaiPlugin API
+
+### reload
+
+Reload the plugin script from source (hot reload).
+
+```rust
+plugin.reload().await?;
+println!("Plugin reloaded at {}", plugin.last_modified());
+```
+
+### call_script_function
+
+Call any function defined in the script.
+
+<ParamField path="function_name" type="&str">
+  Name of the function to call
+</ParamField>
+
+<ParamField path="args" type="&[Dynamic]">
+  Array of Rhai Dynamic values as arguments
+</ParamField>
+
+```rust
+use rhai::Dynamic;
+
+// Call custom function
+let args = vec![Dynamic::from(5), Dynamic::from(3)];
+let result = plugin.call_script_function("add", &args).await?;
+
+if let Some(value) = result {
+    println!("Result: {}", value.as_int().unwrap());
+}
+```
+
+### stats
+
+Get plugin execution statistics.
+
+```rust
+let stats = plugin.stats();
+let total_calls = stats.calls_total();
+let failed_calls = stats.calls_failed();
+let avg_latency = stats.avg_latency_ms();
+
+println!("Calls: {}, Failed: {}, Avg: {:.2}ms", 
+    total_calls, failed_calls, avg_latency);
+```
+
+### last_modified
+
+Get the last modification timestamp.
+
+```rust
+let timestamp = plugin.last_modified();
+```
+
+## Plugin Lifecycle
+
+```rust
+let mut plugin = RhaiPlugin::from_content("test", script).await?;
+
+// Load plugin
+let ctx = PluginContext::default();
+plugin.load(&ctx).await?;
+assert_eq!(plugin.state(), PluginState::Loaded);
+
+// Initialize
+plugin.init_plugin().await?;
+assert_eq!(plugin.state(), PluginState::Running);
+
+// Execute
+let input = r#"{"operation":"add","a":5,"b":3}"#;
+let result = plugin.execute(input.to_string()).await?;
+println!("Result: {}", result);
+
+// Stop
+plugin.stop().await?;
+assert_eq!(plugin.state(), PluginState::Paused);
+
+// Resume
+plugin.start().await?;
+
+// Unload
+plugin.unload().await?;
+assert_eq!(plugin.state(), PluginState::Unloaded);
+```
+
+## Hot Reload Example
+
+```rust
+use notify::{Watcher, RecursiveMode, watcher};
+use std::sync::mpsc::channel;
+use std::time::Duration;
+
+// Watch for file changes
+let (tx, rx) = channel();
+let mut watcher = watcher(tx, Duration::from_secs(1))?;
+watcher.watch("./plugins", RecursiveMode::Recursive)?;
+
+let mut plugin = RhaiPlugin::from_file(
+    "dynamic-plugin",
+    Path::new("./plugins/script.rhai")
+).await?;
+
+// Reload on file change
+loop {
+    match rx.recv() {
+        Ok(event) => {
+            println!("File changed: {:?}", event);
+            if let Err(e) = plugin.reload().await {
+                eprintln!("Reload failed: {}", e);
+            } else {
+                println!("Plugin reloaded successfully");
+            }
+        }
+        Err(e) => eprintln!("Watch error: {}", e),
+    }
+}
+```
+
+## Error Handling in Scripts
+
+```rhai
+fn execute(input) {
+    try {
+        let data = parse_json(input);
+        
+        if !data.contains("value") {
+            throw "Missing 'value' field";
+        }
+        
+        let result = process(data.value);
+        to_json(result)
+    } catch (error) {
+        // Return error as JSON
+        `{"error": "${error}"}`
+    }
+}
+```
+
+## Built-in Functions
+
+Rhai scripts have access to:
+
+```rhai
+// JSON operations
+let obj = parse_json(json_string);
+let json = to_json(object);
+
+// String operations
+let upper = text.to_upper();
+let lower = text.to_lower();
+let trimmed = text.trim();
+
+// Array operations
+let arr = [1, 2, 3];
+arr.push(4);
+let len = arr.len();
+
+// Math operations
+let abs_val = abs(-5);
+let max_val = max(a, b);
+let min_val = min(a, b);
+
+// Print (debug output)
+print("Debug message");
+```
+
+## Performance Statistics
+
+```rust
+impl PluginStats {
+    pub fn calls_total(&self) -> u64;
+    pub fn calls_failed(&self) -> u64;
+    pub fn avg_latency_ms(&self) -> f64;
+    pub fn to_map(&self) -> HashMap<String, serde_json::Value>;
+}
+```
+
+Example usage:
+
+```rust
+let stats_arc = plugin.stats();
+
+// Stats are shared - updates are visible across clones
+let stats_clone = Arc::clone(&stats_arc);
+
+tokio::spawn(async move {
+    loop {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        println!("Total calls: {}", stats_clone.calls_total());
+    }
+});
+```
+
+## Configuration Options
+
+```rust
+use mofa_extra::rhai::ScriptEngineConfig;
+
+let engine_config = ScriptEngineConfig::default()
+    .with_max_operations(100_000)      // Prevent infinite loops
+    .with_max_call_levels(10)           // Prevent stack overflow
+    .with_max_string_size(10_000)       // Limit string size
+    .with_max_array_size(1_000);        // Limit array size
+
+let config = RhaiPluginConfig::new_inline("plugin-id", script)
+    .with_engine_config(engine_config);
+```
+
+## Testing Rhai Plugins
+
+```rust
+#[tokio::test]
+async fn test_calculator_plugin() {
+    let script = r#"
+        let plugin_name = "calculator";
+        let plugin_version = "1.0.0";
+        
+        fn execute(input) {
+            let data = parse_json(input);
+            data.a + data.b
+        }
+    "#;
+    
+    let mut plugin = RhaiPlugin::from_content("calc", script)
+        .await
+        .unwrap();
+    
+    let ctx = PluginContext::default();
+    plugin.load(&ctx).await.unwrap();
+    plugin.init_plugin().await.unwrap();
+    
+    let input = r#"{"a": 5, "b": 3}"#;
+    let result = plugin.execute(input.to_string()).await.unwrap();
+    
+    assert!(result.contains("8"));
+}
+```
+
+## Related
+
+- [AgentPlugin Trait](/api/plugin-trait) - Base plugin interface
+- [Hot Reload](/guides/hot-reload) - Hot reload configuration
+- [Rhai Language](https://rhai.rs) - Rhai scripting language docs

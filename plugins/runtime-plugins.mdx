@@ -1,0 +1,654 @@
+---
+title: Runtime Plugins
+description: Create hot-reloadable Rhai script plugins that can be modified without recompiling your agent
+---
+
+# Runtime Plugins
+
+Runtime plugins are written in Rhai, a lightweight scripting language that integrates seamlessly with Rust. They enable dynamic behavior changes without recompilation and support hot-reloading for rapid development.
+
+## Why Runtime Plugins?
+
+<CardGroup cols={2}>
+  <Card title="Hot Reload" icon="arrows-rotate">
+    Modify plugin behavior without restarting
+  </Card>
+  <Card title="Rapid Development" icon="bolt">
+    Iterate quickly without compilation
+  </Card>
+  <Card title="Dynamic Logic" icon="code">
+    Change business rules at runtime
+  </Card>
+  <Card title="Easy Distribution" icon="share">
+    Ship updates as script files
+  </Card>
+</CardGroup>
+
+## Creating a Rhai Plugin
+
+A basic Rhai plugin structure:
+
+```rhai examples/rhai_hot_reload/sample_plugin.rhai
+// Plugin metadata (optional)
+plugin_name = "my_rhai_plugin";
+plugin_version = "1.0.0";
+plugin_description = "A sample Rhai plugin";
+
+// Lifecycle functions
+fn init() {
+    print("Plugin initialized");
+}
+
+fn start() {
+    print("Plugin started");
+}
+
+fn execute(input) {
+    "Rhai plugin executed: " + input
+}
+
+fn stop() {
+    print("Plugin stopped");
+}
+
+fn unload() {
+    print("Plugin unloaded");
+}
+```
+
+## Loading Rhai Plugins
+
+<Tabs>
+  <Tab title="From File">
+    ```rust examples/rhai_hot_reload/src/main.rs
+    use mofa_plugins::{RhaiPlugin, AgentPlugin, PluginContext};
+    use std::path::PathBuf;
+
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        let plugin_path = PathBuf::from("sample_plugin.rhai");
+
+        // Create plugin from file
+        let mut plugin = RhaiPlugin::from_file(
+            "my_plugin",
+            &plugin_path
+        ).await?;
+
+        // Initialize
+        let ctx = PluginContext::new("test_agent");
+        plugin.load(&ctx).await?;
+        plugin.init_plugin().await?;
+
+        // Execute
+        let result = plugin.execute("Hello".to_string()).await?;
+        println!("Result: {}", result);
+
+        Ok(())
+    }
+    ```
+  </Tab>
+
+  <Tab title="From String">
+    ```rust
+    use mofa_plugins::{RhaiPlugin, AgentPlugin, PluginContext};
+
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        let script = r#"
+            plugin_name = "inline_plugin";
+
+            fn execute(input) {
+                "Processed: " + input
+            }
+        "#;
+
+        let mut plugin = RhaiPlugin::from_content(
+            "inline",
+            script
+        ).await?;
+
+        let ctx = PluginContext::new("test_agent");
+        plugin.load(&ctx).await?;
+        plugin.init_plugin().await?;
+
+        let result = plugin.execute("test".to_string()).await?;
+        println!("Result: {}", result);
+
+        Ok(())
+    }
+    ```
+  </Tab>
+
+  <Tab title="With Configuration">
+    ```rust
+    use mofa_plugins::{
+        RhaiPlugin, RhaiPluginConfig, RhaiPluginSource,
+        ScriptEngineConfig
+    };
+
+    let config = RhaiPluginConfig {
+        source: RhaiPluginSource::File(PathBuf::from("plugin.rhai")),
+        engine_config: ScriptEngineConfig::default(),
+        initial_context: HashMap::new(),
+        dependencies: vec![],
+        plugin_id: "custom_plugin".to_string(),
+    };
+
+    let plugin = RhaiPlugin::new(config).await?;
+    ```
+  </Tab>
+</Tabs>
+
+## Plugin Lifecycle
+
+Rhai plugins support the full plugin lifecycle:
+
+<Steps>
+  <Step title="Load">
+    Plugin is loaded and metadata is extracted:
+
+    ```rhai
+    // Metadata extraction happens automatically
+    plugin_name = "my_plugin";
+    plugin_version = "1.0.0";
+    plugin_description = "My awesome plugin";
+    ```
+  </Step>
+
+  <Step title="Initialize">
+    Optional `init()` function is called:
+
+    ```rhai
+    fn init() {
+        // Initialize plugin state
+        log("Plugin initializing...");
+        // Set up resources
+    }
+    ```
+  </Step>
+
+  <Step title="Start">
+    Optional `start()` function is called:
+
+    ```rhai
+    fn start() {
+        log("Plugin started and ready");
+    }
+    ```
+  </Step>
+
+  <Step title="Execute">
+    Required `execute(input)` function handles requests:
+
+    ```rhai
+    fn execute(input) {
+        // Process input
+        let result = process_data(input);
+        result
+    }
+    ```
+  </Step>
+
+  <Step title="Stop">
+    Optional `stop()` function is called:
+
+    ```rhai
+    fn stop() {
+        log("Plugin stopping...");
+        // Pause operations
+    }
+    ```
+  </Step>
+
+  <Step title="Unload">
+    Optional `unload()` function is called:
+
+    ```rhai
+    fn unload() {
+        log("Plugin unloading...");
+        // Release resources
+    }
+    ```
+  </Step>
+</Steps>
+
+## Hot Reloading
+
+Modify plugins at runtime without restarting:
+
+```rust examples/rhai_hot_reload/src/main.rs
+use tokio::time;
+
+// Check for changes and reload
+async fn check_and_reload(
+    plugin: &mut RhaiPlugin,
+    path: &PathBuf
+) -> Result<bool, Box<dyn std::error::Error>> {
+    // Get current file modification time
+    let current_mod = std::fs::metadata(path)?
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+
+    // Check if plugin needs reload
+    if plugin.last_modified() != current_mod {
+        plugin.reload().await?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let plugin_path = PathBuf::from("sample_plugin.rhai");
+    let mut plugin = RhaiPlugin::from_file("hot_plugin", &plugin_path).await?;
+
+    // Initialize
+    let ctx = PluginContext::new("agent");
+    plugin.load(&ctx).await?;
+    plugin.init_plugin().await?;
+
+    // Main loop with hot reload
+    loop {
+        // Check for changes
+        match check_and_reload(&mut plugin, &plugin_path).await {
+            Ok(true) => println!("🔄 Plugin reloaded!"),
+            Ok(false) => println!("✅ Plugin unchanged"),
+            Err(e) => println!("⚠️  Error: {}", e),
+        }
+
+        // Execute plugin
+        let result = plugin.execute("test".to_string()).await?;
+        println!("Result: {}", result);
+
+        time::sleep(time::Duration::from_secs(2)).await;
+    }
+}
+```
+
+<Note>
+Hot reload preserves the plugin state across reloads when configured with `preserve_state: true`.
+</Note>
+
+## Advanced Plugin Features
+
+### State Management
+
+Maintain state across invocations:
+
+```rhai
+// Global state (preserved across calls)
+let counter = 0;
+let cache = #{};
+
+fn execute(input) {
+    // Increment counter
+    counter += 1;
+
+    // Use cache
+    if cache.contains(input) {
+        cache[input]
+    } else {
+        let result = expensive_operation(input);
+        cache[input] = result;
+        result
+    }
+}
+
+fn expensive_operation(data) {
+    // Simulate expensive work
+    data + " processed (call #" + counter + ")"
+}
+```
+
+### JSON Processing
+
+Work with structured data:
+
+```rhai
+fn execute(input) {
+    // Parse JSON input
+    let data = parse_json(input);
+
+    // Process data
+    let result = #{
+        status: "success",
+        data: data,
+        processed_at: now(),
+        metadata: #{
+            plugin: plugin_name,
+            version: plugin_version
+        }
+    };
+
+    // Return as JSON
+    to_json(result)
+}
+```
+
+### Error Handling
+
+Handle errors gracefully:
+
+```rhai
+fn execute(input) {
+    // Validate input
+    if input == "" {
+        throw "Input cannot be empty";
+    }
+
+    // Try-catch pattern
+    let result = try_process(input);
+    if result == () {
+        throw "Processing failed";
+    }
+
+    result
+}
+
+fn try_process(data) {
+    if data.len() < 3 {
+        return ();
+    }
+    "Processed: " + data
+}
+```
+
+### Logging
+
+Debug your plugins:
+
+```rhai
+fn execute(input) {
+    log("Starting execution with input: " + input);
+    debug("Debug info: input length = " + input.len());
+
+    let result = process(input);
+
+    log("Execution complete");
+    result
+}
+
+fn process(data) {
+    log("Processing data...");
+    // Processing logic
+    "Result: " + data
+}
+```
+
+## Built-in Functions
+
+Rhai plugins have access to useful built-in functions:
+
+<CodeGroup>
+  ```rhai String Functions
+  // String manipulation
+  let text = "  Hello World  ";
+  let trimmed = trim(text);        // "Hello World"
+  let upper = upper(trimmed);      // "HELLO WORLD"
+  let lower = lower(upper);        // "hello world"
+  let len = text.len();            // 17
+  let sub = text.sub_string(2, 7); // "Hello"
+  ```
+
+  ```rhai JSON Functions
+  // JSON operations
+  let obj = #{
+      name: "Alice",
+      age: 30
+  };
+
+  let json_str = to_json(obj);
+  let parsed = parse_json(json_str);
+
+  print(parsed.name); // "Alice"
+  ```
+
+  ```rhai Array Functions
+  // Array operations
+  let arr = [1, 2, 3, 4, 5];
+
+  arr.push(6);           // [1, 2, 3, 4, 5, 6]
+  let popped = arr.pop(); // 6
+  let len = arr.len();   // 5
+  let first = arr[0];    // 1
+
+  // Iteration
+  for item in arr {
+      print(item);
+  }
+  ```
+
+  ```rhai Time Functions
+  // Timestamp
+  let timestamp = now();
+  print("Current time: " + timestamp);
+
+  // Sleep (if enabled)
+  // sleep(1000); // Sleep for 1 second
+  ```
+</CodeGroup>
+
+## Plugin Statistics
+
+Access runtime statistics:
+
+```rust
+use mofa_plugins::AgentPlugin;
+
+// Get plugin stats
+let stats = plugin.stats();
+
+println!("Total calls: {}", stats.calls_total());
+println!("Failed calls: {}", stats.calls_failed());
+println!("Avg latency: {}ms", stats.avg_latency_ms());
+
+// Get as JSON
+let stats_map = stats.to_map();
+for (key, value) in stats_map {
+    println!("{}: {}", key, value);
+}
+```
+
+## Calling Script Functions
+
+Invoke specific functions from Rust:
+
+```rust
+use rhai::Dynamic;
+
+// Call a custom function
+let args = vec![Dynamic::from(5), Dynamic::from(3)];
+let result = plugin.call_script_function("add", &args).await?;
+
+if let Some(value) = result {
+    println!("Result: {}", value.as_int().unwrap());
+}
+
+// Call with no arguments
+let pi = plugin.call_script_function("get_pi", &[]).await?;
+println!("Pi: {}", pi.unwrap().as_float().unwrap());
+```
+
+Corresponding Rhai script:
+
+```rhai
+fn add(a, b) {
+    a + b
+}
+
+fn get_pi() {
+    3.14159
+}
+```
+
+## Security Configuration
+
+Configure script security limits:
+
+```rust
+use mofa_extra::rhai::{ScriptEngineConfig, ScriptSecurityConfig};
+
+let security = ScriptSecurityConfig {
+    max_execution_time_ms: 1000,      // 1 second timeout
+    max_call_stack_depth: 32,         // Prevent deep recursion
+    max_operations: 10_000,           // Limit operations
+    max_array_size: 1000,             // Limit array size
+    max_string_size: 10_000,          // Limit string size
+    allow_loops: true,                // Allow loops
+    allow_file_operations: false,     // Disable file I/O
+    allow_network_operations: false,  // Disable network
+};
+
+let config = ScriptEngineConfig {
+    security,
+    debug_mode: false,
+    strict_mode: true,
+    ..Default::default()
+};
+
+let plugin_config = RhaiPluginConfig::default()
+    .with_engine_config(config);
+```
+
+## Script Validation
+
+Validate scripts before deployment:
+
+```rust
+use mofa_extra::rhai::RhaiScriptEngine;
+
+let engine = RhaiScriptEngine::new(config)?;
+
+let script = r#"
+    fn execute(input) {
+        input + 1
+    }
+"#;
+
+// Validate syntax
+let errors = engine.validate(script)?;
+
+if errors.is_empty() {
+    println!("✓ Script is valid");
+} else {
+    eprintln!("✗ Script has errors:");
+    for error in errors {
+        eprintln!("  - {}", error);
+    }
+}
+```
+
+## Example: Data Processing Plugin
+
+A complete example processing structured data:
+
+```rhai
+plugin_name = "data_processor";
+plugin_version = "1.0.0";
+plugin_description = "Process and transform data";
+
+// State
+let processed_count = 0;
+let error_count = 0;
+
+fn init() {
+    log("Data processor initialized");
+}
+
+fn execute(input) {
+    try {
+        // Parse input
+        let data = parse_json(input);
+
+        // Validate
+        if !validate(data) {
+            error_count += 1;
+            throw "Invalid data format";
+        }
+
+        // Transform
+        let transformed = transform(data);
+
+        // Update stats
+        processed_count += 1;
+
+        // Return result
+        to_json(#{
+            status: "success",
+            data: transformed,
+            stats: #{
+                processed: processed_count,
+                errors: error_count
+            }
+        })
+    } catch (error) {
+        error_count += 1;
+        to_json(#{
+            status: "error",
+            message: error,
+            stats: #{
+                processed: processed_count,
+                errors: error_count
+            }
+        })
+    }
+}
+
+fn validate(data) {
+    // Check required fields
+    data.contains("id") && data.contains("value")
+}
+
+fn transform(data) {
+    #{
+        id: data.id,
+        value: data.value * 2,
+        processed_at: now(),
+        metadata: #{
+            plugin: plugin_name,
+            version: plugin_version
+        }
+    }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep plugins focused">
+    Each plugin should have a single, well-defined responsibility.
+  </Accordion>
+
+  <Accordion title="Handle errors explicitly">
+    Use `throw` for errors and validate inputs.
+  </Accordion>
+
+  <Accordion title="Document your functions">
+    Add comments explaining complex logic.
+  </Accordion>
+
+  <Accordion title="Use metadata">
+    Always set `plugin_name`, `plugin_version`, and `plugin_description`.
+  </Accordion>
+
+  <Accordion title="Test before deploying">
+    Validate scripts using the validation API.
+  </Accordion>
+
+  <Accordion title="Monitor performance">
+    Use logging and check plugin statistics.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Rhai Scripting Guide" icon="code" href="/plugins/rhai-scripting">
+    Learn the Rhai language in detail
+  </Card>
+  <Card title="WASM Plugins" icon="cube" href="/plugins/wasm-plugins">
+    Build sandboxed WebAssembly plugins
+  </Card>
+</CardGroup>

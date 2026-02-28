@@ -1,0 +1,938 @@
+---
+title: Workflow DSL
+description: YAML-based declarative workflow configuration and parsing
+---
+
+# Workflow DSL
+
+The Workflow DSL (Domain Specific Language) allows you to define workflows declaratively using YAML or TOML configuration files. This provides a more accessible way to build workflows without writing Rust code.
+
+## Overview
+
+The Workflow DSL supports:
+
+- **Declarative configuration** in YAML or TOML
+- **Agent registry** for reusable LLM agents
+- **Environment variable substitution**
+- **Multiple node types** (start, end, task, agent, condition, parallel, join, loop, transform, sub-workflow, wait)
+- **Conditional and parallel edges**
+- **Retry policies** and timeouts
+- **Validation** before execution
+
+## Basic Structure
+
+```yaml
+metadata:
+  id: workflow_id
+  name: Workflow Name
+  description: What this workflow does
+  version: "1.0.0"
+
+config:
+  max_parallel: 10
+  default_timeout_ms: 60000
+
+agents:
+  agent_name:
+    model: gpt-4
+    system_prompt: "System instructions"
+    temperature: 0.7
+
+nodes:
+  - type: start
+    id: start
+  
+  - type: llm_agent
+    id: process
+    name: Process Input
+    agent:
+      agent_id: agent_name
+  
+  - type: end
+    id: end
+
+edges:
+  - from: start
+    to: process
+  - from: process
+    to: end
+```
+
+## WorkflowDefinition Schema
+
+### Metadata
+
+<ParamField path="metadata" type="WorkflowMetadata" required>
+  Workflow metadata and identification
+  
+  <ParamField path="id" type="string" required>
+    Unique workflow identifier
+  </ParamField>
+  
+  <ParamField path="name" type="string" required>
+    Human-readable workflow name
+  </ParamField>
+  
+  <ParamField path="description" type="string">
+    Workflow description
+  </ParamField>
+  
+  <ParamField path="version" type="string">
+    Workflow version (e.g., "1.0.0")
+  </ParamField>
+  
+  <ParamField path="author" type="string">
+    Workflow author
+  </ParamField>
+  
+  <ParamField path="tags" type="array<string>">
+    Tags for categorization
+  </ParamField>
+</ParamField>
+
+### Configuration
+
+<ParamField path="config" type="WorkflowConfig">
+  Workflow-level configuration
+  
+  <ParamField path="max_parallel" type="number" default="10">
+    Maximum parallel node executions
+  </ParamField>
+  
+  <ParamField path="default_timeout_ms" type="number" default="60000">
+    Default timeout for nodes in milliseconds
+  </ParamField>
+  
+  <ParamField path="enable_checkpoints" type="boolean" default="false">
+    Enable execution checkpoints
+  </ParamField>
+  
+  <ParamField path="retry_policy" type="RetryPolicy">
+    Default retry policy for all nodes
+  </ParamField>
+</ParamField>
+
+### Agents
+
+<ParamField path="agents" type="map<string, LlmAgentConfig>">
+  Registry of reusable LLM agents
+  
+  ```yaml
+  agents:
+    classifier:
+      model: gpt-4
+      system_prompt: "You are a classifier"
+      temperature: 0.3
+      max_tokens: 50
+      context_window_size: 10
+      user_id: "user123"
+      tenant_id: "tenant456"
+  ```
+  
+  <ParamField path="model" type="string" required>
+    Model identifier (e.g., "gpt-4", "gpt-3.5-turbo")
+  </ParamField>
+  
+  <ParamField path="system_prompt" type="string">
+    System prompt for the agent
+  </ParamField>
+  
+  <ParamField path="temperature" type="number">
+    Temperature parameter (0.0 - 2.0)
+  </ParamField>
+  
+  <ParamField path="max_tokens" type="number">
+    Maximum tokens to generate
+  </ParamField>
+  
+  <ParamField path="context_window_size" type="number">
+    Number of conversation rounds to keep in context
+  </ParamField>
+  
+  <ParamField path="user_id" type="string">
+    User ID for persistence
+  </ParamField>
+  
+  <ParamField path="tenant_id" type="string">
+    Tenant ID for multi-tenancy
+  </ParamField>
+</ParamField>
+
+## Node Definitions
+
+### Start Node
+
+<ParamField path="type: start" type="node">
+  Workflow entry point
+  
+  ```yaml
+  - type: start
+    id: start
+    name: Start  # optional
+  ```
+  
+  <ParamField path="id" type="string" required>
+    Node identifier
+  </ParamField>
+  
+  <ParamField path="name" type="string">
+    Human-readable name
+  </ParamField>
+</ParamField>
+
+### End Node
+
+<ParamField path="type: end" type="node">
+  Workflow exit point
+  
+  ```yaml
+  - type: end
+    id: end
+    name: End  # optional
+  ```
+</ParamField>
+
+### Task Node
+
+<ParamField path="type: task" type="node">
+  Custom task execution
+  
+  ```yaml
+  - type: task
+    id: process
+    name: Process Data
+    executor_type: none  # or function, http, script
+    config:
+      timeout_ms: 30000
+      retry_policy:
+        max_retries: 3
+        retry_delay_ms: 1000
+      metadata:
+        priority: high
+  ```
+  
+  <ParamField path="id" type="string" required>
+    Node identifier
+  </ParamField>
+  
+  <ParamField path="name" type="string" required>
+    Human-readable name
+  </ParamField>
+  
+  <ParamField path="executor_type" type="enum" required>
+    Executor type:
+    - `none`: No-op (pass-through)
+    - `function`: Function executor (code-defined)
+    - `http`: HTTP request executor
+    - `script`: Rhai script executor
+  </ParamField>
+  
+  <ParamField path="config" type="NodeConfigDef">
+    Node configuration (see [Node Configuration](#node-configuration))
+  </ParamField>
+</ParamField>
+
+### LLM Agent Node
+
+<ParamField path="type: llm_agent" type="node">
+  Invokes an LLM agent
+  
+  ```yaml
+  - type: llm_agent
+    id: classify
+    name: Classify Query
+    agent:
+      agent_id: classifier  # reference from registry
+    prompt_template: "Query: {{ input }}"  # optional
+    config:
+      timeout_ms: 30000
+  ```
+  
+  **Agent reference (registry):**
+  ```yaml
+  agent:
+    agent_id: classifier
+  ```
+  
+  **Agent reference (inline):**
+  ```yaml
+  agent:
+    model: gpt-4
+    system_prompt: "..."
+    temperature: 0.7
+  ```
+  
+  <ParamField path="prompt_template" type="string">
+    Optional prompt template with `{{ input }}` placeholder
+  </ParamField>
+</ParamField>
+
+### Condition Node
+
+<ParamField path="type: condition" type="node">
+  Boolean condition evaluation
+  
+  ```yaml
+  - type: condition
+    id: check_value
+    name: Check Value
+    condition:
+      condition_type: expression
+      expr: "value > 50"
+  ```
+  
+  **Condition types:**
+  
+  <ParamField path="expression" type="condition_type">
+    Expression-based condition
+    
+    ```yaml
+    condition:
+      condition_type: expression
+      expr: "value > 50"
+    ```
+  </ParamField>
+  
+  <ParamField path="value" type="condition_type">
+    Value comparison
+    
+    ```yaml
+    condition:
+      condition_type: value
+      field: status
+      operator: eq
+      value: "active"
+    ```
+  </ParamField>
+</ParamField>
+
+### Parallel Node
+
+<ParamField path="type: parallel" type="node">
+  Fan-out marker for parallel execution
+  
+  ```yaml
+  - type: parallel
+    id: fork
+    name: Fork Tasks
+    config:
+      metadata:
+        max_concurrent: 5
+  ```
+  
+  Use with parallel edges to define branches.
+</ParamField>
+
+### Join Node
+
+<ParamField path="type: join" type="node">
+  Aggregates results from parallel branches
+  
+  ```yaml
+  - type: join
+    id: merge
+    name: Merge Results
+    wait_for:
+      - task_a
+      - task_b
+      - task_c
+    config:
+      timeout_ms: 60000
+  ```
+  
+  <ParamField path="wait_for" type="array<string>">
+    List of node IDs to wait for completion
+  </ParamField>
+</ParamField>
+
+### Loop Node
+
+<ParamField path="type: loop" type="node">
+  Executes body repeatedly while condition is true
+  
+  ```yaml
+  - type: loop
+    id: iterate
+    name: Iterate Until Done
+    executor_type: none
+    condition:
+      condition_type: while
+      expr: "count < 10"
+    max_iterations: 100
+    config:
+      timeout_ms: 120000
+  ```
+  
+  **Loop condition types:**
+  - `while`: Continue while expression is true
+  - `until`: Continue until expression is true
+  - `count`: Fixed number of iterations
+</ParamField>
+
+### Transform Node
+
+<ParamField path="type: transform" type="node">
+  Data transformation
+  
+  ```yaml
+  - type: transform
+    id: format
+    name: Format Output
+    transform_type: template
+    template: |
+      Result: {{ input }}
+  ```
+  
+  **Transform types:**
+  
+  <ParamField path="template" type="transform_type">
+    Jinja-style template
+    
+    ```yaml
+    transform_type: template
+    template: "Formatted: {{ input }}"
+    ```
+  </ParamField>
+  
+  <ParamField path="expression" type="transform_type">
+    JavaScript expression
+    
+    ```yaml
+    transform_type: expression
+    expr: "input.toUpperCase()"
+    ```
+  </ParamField>
+  
+  <ParamField path="map_reduce" type="transform_type">
+    Map/reduce operation
+    
+    ```yaml
+    transform_type: map_reduce
+    map: "x => x * 2"
+    reduce: "(acc, x) => acc + x"
+    ```
+  </ParamField>
+</ParamField>
+
+### SubWorkflow Node
+
+<ParamField path="type: sub_workflow" type="node">
+  Invokes another workflow
+  
+  ```yaml
+  - type: sub_workflow
+    id: sub_process
+    name: Sub-Process
+    workflow_id: child_workflow
+    config:
+      timeout_ms: 300000
+  ```
+  
+  <ParamField path="workflow_id" type="string" required>
+    ID of the workflow to invoke
+  </ParamField>
+</ParamField>
+
+### Wait Node
+
+<ParamField path="type: wait" type="node">
+  Waits for external event
+  
+  ```yaml
+  - type: wait
+    id: wait_approval
+    name: Wait for Approval
+    event_type: approval_event
+    config:
+      timeout_ms: 86400000  # 24 hours
+  ```
+  
+  <ParamField path="event_type" type="string" required>
+    Type of event to wait for
+  </ParamField>
+</ParamField>
+
+## Edge Definitions
+
+<ParamField path="edges" type="array<EdgeDefinition>" required>
+  List of edges connecting nodes
+  
+  <ParamField path="from" type="string" required>
+    Source node ID
+  </ParamField>
+  
+  <ParamField path="to" type="string" required>
+    Target node ID
+  </ParamField>
+  
+  <ParamField path="condition" type="string">
+    Optional condition for conditional routing
+  </ParamField>
+  
+  <ParamField path="label" type="string">
+    Optional edge label
+  </ParamField>
+</ParamField>
+
+### Simple Edges
+
+```yaml
+edges:
+  - from: start
+    to: process
+  - from: process
+    to: end
+```
+
+### Conditional Edges
+
+```yaml
+edges:
+  - from: classify
+    to: handle_billing
+    condition: "category == 'billing'"
+    label: billing
+  
+  - from: classify
+    to: handle_technical
+    condition: "category == 'technical'"
+    label: technical
+```
+
+### Parallel Edges
+
+```yaml
+edges:
+  # Fork to parallel branches
+  - from: fork
+    to: task_a
+  - from: fork
+    to: task_b
+  - from: fork
+    to: task_c
+  
+  # Branches to merge
+  - from: task_a
+    to: merge
+  - from: task_b
+    to: merge
+  - from: task_c
+    to: merge
+```
+
+## Node Configuration
+
+<ParamField path="config" type="NodeConfigDef">
+  Per-node configuration
+  
+  <ParamField path="retry_policy" type="RetryPolicy">
+    Retry configuration
+    
+    ```yaml
+    retry_policy:
+      max_retries: 3
+      retry_delay_ms: 1000
+      exponential_backoff: true
+      max_delay_ms: 30000
+    ```
+  </ParamField>
+  
+  <ParamField path="timeout_ms" type="number">
+    Execution timeout in milliseconds
+  </ParamField>
+  
+  <ParamField path="metadata" type="map<string, string>">
+    Custom metadata key-value pairs
+    
+    ```yaml
+    metadata:
+      priority: high
+      team: backend
+    ```
+  </ParamField>
+</ParamField>
+
+## WorkflowDslParser API
+
+### Parsing Methods
+
+<ParamField path="from_yaml" type="fn(content: &str) -> DslResult<WorkflowDefinition>">
+  Parse workflow from YAML string
+  
+  ```rust
+  use mofa_foundation::workflow::dsl::WorkflowDslParser;
+  
+  let yaml = r#"
+  metadata:
+    id: example
+    name: Example Workflow
+  nodes:
+    - type: start
+      id: start
+    - type: end
+      id: end
+  edges:
+    - from: start
+      to: end
+  "#;
+  
+  let definition = WorkflowDslParser::from_yaml(yaml)?;
+  ```
+</ParamField>
+
+<ParamField path="from_toml" type="fn(content: &str) -> DslResult<WorkflowDefinition>">
+  Parse workflow from TOML string
+  
+  ```rust
+  let toml = r#"
+  [metadata]
+  id = "example"
+  name = "Example Workflow"
+  
+  [[nodes]]
+  type = "start"
+  id = "start"
+  
+  [[nodes]]
+  type = "end"
+  id = "end"
+  
+  [[edges]]
+  from = "start"
+  to = "end"
+  "#;
+  
+  let definition = WorkflowDslParser::from_toml(toml)?;
+  ```
+</ParamField>
+
+<ParamField path="from_file" type="fn(path: impl AsRef<Path>) -> DslResult<WorkflowDefinition>">
+  Parse workflow from file (auto-detects format by extension)
+  
+  Supports `.yaml`, `.yml`, and `.toml` files.
+  
+  ```rust
+  let definition = WorkflowDslParser::from_file("workflow.yaml")?;
+  ```
+</ParamField>
+
+<ParamField path="build_with_agents" type="async fn(definition: WorkflowDefinition, agent_registry: &HashMap<String, Arc<LLMAgent>>) -> DslResult<WorkflowGraph>">
+  Build executable workflow from definition
+  
+  Requires a registry of pre-built LLMAgent instances.
+  
+  ```rust
+  use std::collections::HashMap;
+  use std::sync::Arc;
+  use mofa_sdk::llm::{LLMAgent, LLMAgentBuilder, openai_from_env};
+  
+  // Build agent registry
+  let mut agent_registry = HashMap::new();
+  
+  let provider = Arc::new(openai_from_env()?);
+  let classifier = Arc::new(
+      LLMAgentBuilder::new()
+          .with_provider(provider)
+          .with_system_prompt("You are a classifier")
+          .build()
+  );
+  
+  agent_registry.insert("classifier".to_string(), classifier);
+  
+  // Build workflow
+  let workflow = WorkflowDslParser::build_with_agents(
+      definition,
+      &agent_registry
+  ).await?;
+  ```
+</ParamField>
+
+## Environment Variables
+
+The DSL parser supports environment variable substitution using `${VAR_NAME}` syntax.
+
+```yaml
+metadata:
+  id: ${WORKFLOW_ID}
+  name: ${WORKFLOW_NAME}
+
+agents:
+  gpt_agent:
+    model: ${MODEL_NAME}
+    temperature: ${TEMPERATURE}
+
+nodes:
+  - type: llm_agent
+    id: process
+    name: Process
+    agent:
+      agent_id: gpt_agent
+    prompt_template: "${PROMPT_PREFIX} {{ input }}"
+```
+
+## Complete Examples
+
+### Customer Support Workflow
+
+```yaml
+metadata:
+  id: customer_support
+  name: Customer Support Workflow
+  description: Routes customer queries to appropriate handlers
+  version: "1.0.0"
+
+agents:
+  classifier:
+    model: gpt-4
+    system_prompt: "Classify queries into: billing, technical, general"
+    temperature: 0.3
+    max_tokens: 50
+  
+  billing_handler:
+    model: gpt-4
+    system_prompt: "Help customers with billing inquiries"
+    temperature: 0.7
+  
+  technical_handler:
+    model: gpt-4
+    system_prompt: "Help customers with technical issues"
+    temperature: 0.7
+
+nodes:
+  - type: start
+    id: start
+  
+  - type: llm_agent
+    id: classify
+    name: Classify Query
+    agent:
+      agent_id: classifier
+    config:
+      timeout_ms: 30000
+  
+  - type: llm_agent
+    id: handle_billing
+    name: Handle Billing
+    agent:
+      agent_id: billing_handler
+    prompt_template: "Customer query: {{ input }}"
+  
+  - type: llm_agent
+    id: handle_technical
+    name: Handle Technical
+    agent:
+      agent_id: technical_handler
+    prompt_template: "Customer query: {{ input }}"
+  
+  - type: end
+    id: end
+
+edges:
+  - from: start
+    to: classify
+  
+  - from: classify
+    to: handle_billing
+    condition: "category == 'billing'"
+  
+  - from: classify
+    to: handle_technical
+    condition: "category == 'technical'"
+  
+  - from: handle_billing
+    to: end
+  
+  - from: handle_technical
+    to: end
+```
+
+### Parallel Analysis Workflow
+
+```yaml
+metadata:
+  id: parallel_analysis
+  name: Parallel Analysis Workflow
+  description: Analyzes content using multiple agents in parallel
+
+agents:
+  sentiment_analyzer:
+    model: gpt-4
+    system_prompt: "Analyze sentiment: positive, negative, or neutral"
+    temperature: 0.3
+  
+  keyword_extractor:
+    model: gpt-4
+    system_prompt: "Extract top 5 keywords"
+    temperature: 0.3
+  
+  summary_generator:
+    model: gpt-4
+    system_prompt: "Generate a brief summary"
+    temperature: 0.5
+
+nodes:
+  - type: start
+    id: start
+  
+  - type: parallel
+    id: fork
+    name: Fork Analysis
+  
+  - type: llm_agent
+    id: sentiment
+    name: Sentiment Analysis
+    agent:
+      agent_id: sentiment_analyzer
+  
+  - type: llm_agent
+    id: keywords
+    name: Keyword Extraction
+    agent:
+      agent_id: keyword_extractor
+  
+  - type: llm_agent
+    id: summary
+    name: Summary Generation
+    agent:
+      agent_id: summary_generator
+  
+  - type: join
+    id: merge
+    name: Merge Results
+    wait_for:
+      - sentiment
+      - keywords
+      - summary
+  
+  - type: transform
+    id: format
+    name: Format Output
+    transform_type: template
+    template: |
+      Analysis Results:
+      - Sentiment: {{ sentiment }}
+      - Keywords: {{ keywords }}
+      - Summary: {{ summary }}
+  
+  - type: end
+    id: end
+
+edges:
+  - from: start
+    to: fork
+  
+  - from: fork
+    to: sentiment
+  - from: fork
+    to: keywords
+  - from: fork
+    to: summary
+  
+  - from: sentiment
+    to: merge
+  - from: keywords
+    to: merge
+  - from: summary
+    to: merge
+  
+  - from: merge
+    to: format
+  
+  - from: format
+    to: end
+```
+
+### Usage Example (Rust)
+
+```rust
+use mofa_sdk::workflow::{WorkflowDslParser, WorkflowExecutor, ExecutorConfig, WorkflowValue};
+use mofa_sdk::llm::{LLMAgent, LLMAgentBuilder, openai_from_env};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse workflow from file
+    let definition = WorkflowDslParser::from_file("customer_support.yaml")?;
+    
+    // Build agent registry
+    let mut agent_registry = HashMap::new();
+    let provider = Arc::new(openai_from_env()?);
+    
+    for (agent_id, config) in &definition.agents {
+        let agent = Arc::new(
+            LLMAgentBuilder::new()
+                .with_id(agent_id)
+                .with_provider(provider.clone())
+                .with_model(&config.model)
+                .with_system_prompt(
+                    config.system_prompt.as_deref().unwrap_or("")
+                )
+                .with_temperature(config.temperature.unwrap_or(0.7))
+                .build()
+        );
+        agent_registry.insert(agent_id.clone(), agent);
+    }
+    
+    // Build workflow
+    let workflow = WorkflowDslParser::build_with_agents(
+        definition,
+        &agent_registry
+    ).await?;
+    
+    // Execute workflow
+    let executor = WorkflowExecutor::new(ExecutorConfig::default());
+    let input = WorkflowValue::String(
+        "I was charged twice for my subscription".to_string()
+    );
+    
+    let result = executor.execute(&workflow, input).await?;
+    println!("Result: {:?}", result);
+    
+    Ok(())
+}
+```
+
+## Error Handling
+
+<ParamField path="DslError" type="enum">
+  Errors that can occur during DSL parsing
+  
+  <ParamField path="Io" type="variant">
+    IO error reading file
+  </ParamField>
+  
+  <ParamField path="YamlParse" type="variant">
+    YAML parsing error
+  </ParamField>
+  
+  <ParamField path="TomlParse" type="variant">
+    TOML parsing error
+  </ParamField>
+  
+  <ParamField path="Validation" type="variant">
+    Workflow validation error (missing start/end, invalid references, etc.)
+  </ParamField>
+  
+  <ParamField path="AgentNotFound" type="variant">
+    Referenced agent not found in registry
+  </ParamField>
+  
+  <ParamField path="InvalidNodeType" type="variant">
+    Invalid node type specified
+  </ParamField>
+  
+  <ParamField path="InvalidEdge" type="variant">
+    Invalid edge reference
+  </ParamField>
+  
+  <ParamField path="Build" type="variant">
+    Error building workflow from definition
+  </ParamField>
+</ParamField>
+
+## See Also
+
+- [StateGraph API](/api/state-graph) - Graph building and execution
+- [Workflow Nodes](/api/workflow-nodes) - Node types and implementations
+- [LLMAgent](/api/llm-agent) - LLM agent configuration

@@ -1,0 +1,900 @@
+---
+title: 'Swift Bindings'
+description: 'Native Swift bindings for MoFA on iOS and macOS'
+---
+
+## Overview
+
+MoFA provides native Swift bindings generated through Mozilla UniFFI. These bindings offer idiomatic Swift APIs with async/await support, type safety, and seamless integration with iOS and macOS applications.
+
+## Installation
+
+<Tabs>
+  <Tab title="Swift Package Manager">
+    Add to your `Package.swift`:
+    
+    ```swift
+    dependencies: [
+        .package(url: "https://github.com/mofa-org/mofa-swift.git", from: "0.1.0")
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="CocoaPods">
+    Add to your `Podfile`:
+    
+    ```ruby
+    pod 'MoFA', '~> 0.1.0'
+    ```
+  </Tab>
+  
+  <Tab title="From Source">
+    ```bash
+    # Install UniFFI bindgen
+    cargo install uniffi-bindgen
+    
+    # Build FFI library for iOS/macOS
+    cd mofa
+    cargo build --release --features uniffi -p mofa-ffi --target aarch64-apple-darwin
+    
+    # Generate Swift bindings
+    cd crates/mofa-ffi
+    ./generate-bindings.sh swift
+    
+    # Create XCFramework
+    cd bindings/swift
+    ./create-xcframework.sh
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+### Basic LLM Agent
+
+```swift
+import MoFA
+import Foundation
+
+// Set your API key
+guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+    fatalError("OPENAI_API_KEY not set")
+}
+
+do {
+    // Create an agent using the builder pattern
+    let builder = try newLlmAgentBuilder()
+        .setId(id: "my-agent")
+        .setName(name: "Swift Agent")
+        .setSystemPrompt(prompt: "You are a helpful assistant.")
+        .setTemperature(temperature: 0.7)
+        .setMaxTokens(maxTokens: 1000)
+        .setOpenaiProvider(
+            apiKey: apiKey,
+            baseUrl: nil,
+            model: "gpt-3.5-turbo"
+        )
+    
+    let agent = try builder.build()
+    
+    // Simple Q&A (no context retention)
+    let answer = try agent.ask(question: "What is Swift?")
+    print("Answer: \(answer)")
+    
+    // Multi-turn chat (with context)
+    try agent.chat(message: "My favorite language is Swift.")
+    let response = try agent.chat(message: "What did I just tell you?")
+    print("Response: \(response)")
+    
+    // Get conversation history
+    let history = agent.getHistory()
+    print("Total messages: \(history.count)")
+    
+    // Clear history
+    agent.clearHistory()
+} catch {
+    print("Error: \(error)")
+}
+```
+
+## API Reference
+
+### Namespace Functions
+
+<ParamField path="getVersion" type="() -> String">
+  Get the MoFA SDK version string.
+</ParamField>
+
+<ParamField path="isDoraAvailable" type="() -> Bool">
+  Check if Dora-rs distributed runtime is available.
+</ParamField>
+
+<ParamField path="newLlmAgentBuilder" type="() throws -> LLMAgentBuilder">
+  Create a new LLM agent builder.
+</ParamField>
+
+### LLMAgentBuilder
+
+<ParamField path="setId" type="(id: String) -> LLMAgentBuilder">
+  Set the agent ID. If not set, a UUID will be generated.
+</ParamField>
+
+<ParamField path="setName" type="(name: String) -> LLMAgentBuilder">
+  Set the agent name for display purposes.
+</ParamField>
+
+<ParamField path="setSystemPrompt" type="(prompt: String) -> LLMAgentBuilder">
+  Set the system prompt that defines agent behavior.
+</ParamField>
+
+<ParamField path="setTemperature" type="(temperature: Float) -> LLMAgentBuilder">
+  Set the LLM temperature (0.0 to 1.0). Higher values produce more random outputs.
+</ParamField>
+
+<ParamField path="setMaxTokens" type="(maxTokens: UInt32) -> LLMAgentBuilder">
+  Set the maximum number of tokens to generate.
+</ParamField>
+
+<ParamField path="setSessionId" type="(id: String) -> LLMAgentBuilder">
+  Set the initial session ID for conversation tracking.
+</ParamField>
+
+<ParamField path="setUserId" type="(id: String) -> LLMAgentBuilder">
+  Set the user ID for multi-tenant scenarios.
+</ParamField>
+
+<ParamField path="setTenantId" type="(id: String) -> LLMAgentBuilder">
+  Set the tenant ID for multi-tenant isolation.
+</ParamField>
+
+<ParamField path="setContextWindowSize" type="(size: UInt32) -> LLMAgentBuilder">
+  Set the sliding context window size (in conversation rounds).
+</ParamField>
+
+<ParamField path="setOpenaiProvider" type="(apiKey: String, baseUrl: String?, model: String?) -> LLMAgentBuilder">
+  Configure the OpenAI provider. `baseUrl` and `model` are optional.
+</ParamField>
+
+<ParamField path="build" type="() throws -> LLMAgent" required>
+  Build the agent. Throws `MoFaError` if configuration is invalid.
+</ParamField>
+
+### LLMAgent
+
+<ParamField path="agentId" type="() throws -> String">
+  Get the agent ID.
+</ParamField>
+
+<ParamField path="name" type="() throws -> String">
+  Get the agent name.
+</ParamField>
+
+<ParamField path="ask" type="(question: String) throws -> String">
+  Simple Q&A without context retention. Each call is independent.
+</ParamField>
+
+<ParamField path="chat" type="(message: String) throws -> String">
+  Multi-turn chat with context retention. Maintains conversation history.
+</ParamField>
+
+<ParamField path="clearHistory" type="() -> Void">
+  Clear the conversation history.
+</ParamField>
+
+<ParamField path="getHistory" type="() -> [ChatMessage]">
+  Get the full conversation history as an array of messages.
+</ParamField>
+
+<ParamField path="getLastOutput" type="() throws -> AgentOutputInfo">
+  Get structured output from the last execution (tools used, token usage, etc.).
+</ParamField>
+
+## Examples
+
+### Example 1: Swift Async/Await
+
+```swift
+import MoFA
+import Foundation
+
+actor AgentActor {
+    private let agent: LLMAgent
+    
+    init(apiKey: String) throws {
+        let builder = try newLlmAgentBuilder()
+            .setName(name: "Async Agent")
+            .setOpenaiProvider(apiKey: apiKey, baseUrl: nil, model: "gpt-3.5-turbo")
+        
+        self.agent = try builder.build()
+    }
+    
+    func ask(_ question: String) async throws -> String {
+        try agent.ask(question: question)
+    }
+    
+    func chat(_ message: String) async throws -> String {
+        try agent.chat(message: message)
+    }
+    
+    func history() async -> [ChatMessage] {
+        agent.getHistory()
+    }
+    
+    func clear() async {
+        agent.clearHistory()
+    }
+}
+
+@main
+struct Main {
+    static func main() async {
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+            print("OPENAI_API_KEY not set")
+            return
+        }
+        
+        do {
+            let agentActor = try AgentActor(apiKey: apiKey)
+            
+            // Concurrent queries
+            async let answer1 = agentActor.ask("What is Swift?")
+            async let answer2 = agentActor.ask("What is Rust?")
+            async let answer3 = agentActor.ask("What is Kotlin?")
+            
+            let (a1, a2, a3) = try await (answer1, answer2, answer3)
+            
+            print("Answer 1: \(a1.prefix(100))...")
+            print("Answer 2: \(a2.prefix(100))...")
+            print("Answer 3: \(a3.prefix(100))...")
+            
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+### Example 2: Multi-Provider Support
+
+<CodeGroup>
+
+```swift OpenAI
+import MoFA
+
+func createOpenAIAgent() throws -> LLMAgent {
+    guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+        throw NSError(domain: "APIKey", code: 1, userInfo: [NSLocalizedDescriptionKey: "API key not set"])
+    }
+    
+    let builder = try newLlmAgentBuilder()
+        .setName(name: "OpenAI Agent")
+        .setOpenaiProvider(apiKey: apiKey, baseUrl: nil, model: "gpt-4")
+    
+    return try builder.build()
+}
+
+let agent = try createOpenAIAgent()
+let response = try agent.ask(question: "What is Swift?")
+print(response)
+```
+
+```swift Ollama (Local)
+import MoFA
+
+func createOllamaAgent() throws -> LLMAgent {
+    let config = LLMConfig(
+        provider: .ollama,
+        model: "llama2",
+        apiKey: nil,
+        baseUrl: "http://localhost:11434",
+        deployment: nil,
+        temperature: 0.7,
+        maxTokens: 500,
+        systemPrompt: "You are a helpful assistant."
+    )
+    
+    return try LLMAgent.fromConfig(
+        config: config,
+        agentId: "ollama-agent",
+        name: "Ollama Agent"
+    )
+}
+
+let agent = try createOllamaAgent()
+let response = try agent.chat(message: "Tell me a joke about Swift.")
+print(response)
+```
+
+</CodeGroup>
+
+### Example 3: SwiftUI Integration
+
+```swift
+import SwiftUI
+import MoFA
+
+class ChatViewModel: ObservableObject {
+    @Published var messages: [Message] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private let agent: LLMAgent
+    
+    init() throws {
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+            throw NSError(domain: "APIKey", code: 1, userInfo: [NSLocalizedDescriptionKey: "API key not set"])
+        }
+        
+        let builder = try newLlmAgentBuilder()
+            .setName(name: "SwiftUI Agent")
+            .setSystemPrompt(prompt: "You are a helpful assistant.")
+            .setOpenaiProvider(apiKey: apiKey, baseUrl: nil, model: "gpt-3.5-turbo")
+        
+        self.agent = try builder.build()
+    }
+    
+    func send(message: String) {
+        // Add user message
+        messages.append(Message(role: .user, content: message))
+        
+        isLoading = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                let response = try agent.chat(message: message)
+                await MainActor.run {
+                    self.messages.append(Message(role: .assistant, content: response))
+                    self.isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                }
+            }
+        }
+    }
+    
+    func clear() {
+        agent.clearHistory()
+        messages.removeAll()
+    }
+}
+
+struct Message: Identifiable {
+    let id = UUID()
+    let role: ChatRole
+    let content: String
+}
+
+struct ChatView: View {
+    @StateObject private var viewModel: ChatViewModel
+    @State private var inputText = ""
+    
+    init() {
+        _viewModel = StateObject(wrappedValue: try! ChatViewModel())
+    }
+    
+    var body: some View {
+        VStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(viewModel.messages) { message in
+                        MessageRow(message: message)
+                    }
+                    
+                    if viewModel.isLoading {
+                        ProgressView()
+                    }
+                }
+                .padding()
+            }
+            
+            if let error = viewModel.errorMessage {
+                Text(error)
+                    .foregroundColor(.red)
+                    .padding()
+            }
+            
+            HStack {
+                TextField("Type a message...", text: $inputText)
+                    .textFieldStyle(.roundedBorder)
+                
+                Button("Send") {
+                    let message = inputText
+                    inputText = ""
+                    viewModel.send(message: message)
+                }
+                .disabled(inputText.isEmpty || viewModel.isLoading)
+            }
+            .padding()
+        }
+        .navigationTitle("MoFA Chat")
+        .toolbar {
+            Button("Clear") {
+                viewModel.clear()
+            }
+        }
+    }
+}
+
+struct MessageRow: View {
+    let message: Message
+    
+    var body: some View {
+        HStack {
+            if message.role == .user {
+                Spacer()
+            }
+            
+            Text(message.content)
+                .padding()
+                .background(message.role == .user ? Color.blue : Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            
+            if message.role == .assistant {
+                Spacer()
+            }
+        }
+    }
+}
+```
+
+### Example 4: Session Management
+
+```swift
+import MoFA
+import Foundation
+
+func sessionExample() throws {
+    // Create in-memory session manager
+    let manager = SessionManager.newInMemory()
+    
+    // Get or create a session
+    let session = try manager.getOrCreate(key: "user-123")
+    
+    // Add messages
+    session.addMessage(role: "user", content: "Hello!")
+    session.addMessage(role: "assistant", content: "Hi there! How can I help?")
+    session.addMessage(role: "user", content: "What's the weather like?")
+    
+    // Retrieve history
+    let history = session.getHistory(maxMessages: 10)
+    print("Conversation history:")
+    for msg in history {
+        print("\(msg.role): \(msg.content)")
+    }
+    
+    // Store metadata
+    try session.setMetadata(key: "user_name", valueJson: "\"Alice\"")
+    try session.setMetadata(key: "preferences", valueJson: "{\"theme\": \"dark\"}")
+    
+    // Retrieve metadata
+    if let userName = session.getMetadata(key: "user_name") {
+        print("User name: \(userName)")
+    }
+    
+    // Save session
+    try manager.saveSession(session: session)
+    
+    // List all sessions
+    let allSessions = try manager.listSessions()
+    print("Total sessions: \(allSessions.count)")
+    
+    // Delete session
+    let deleted = try manager.deleteSession(key: "user-123")
+    print("Session deleted: \(deleted)")
+}
+
+try sessionExample()
+```
+
+### Example 5: Custom Tool Registration
+
+```swift
+import MoFA
+import Foundation
+
+class CalculatorTool: FfiToolCallback {
+    func name() -> String {
+        "calculator"
+    }
+    
+    func description() -> String {
+        "Perform basic arithmetic operations"
+    }
+    
+    func parametersSchemaJson() -> String {
+        """
+        {
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": ["add", "subtract", "multiply", "divide"]
+                },
+                "a": {"type": "number"},
+                "b": {"type": "number"}
+            },
+            "required": ["operation", "a", "b"]
+        }
+        """
+    }
+    
+    func execute(argumentsJson: String) -> FfiToolResult {
+        guard let data = argumentsJson.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let op = json["operation"] as? String,
+              let a = json["a"] as? Double,
+              let b = json["b"] as? Double else {
+            return FfiToolResult(
+                success: false,
+                outputJson: "null",
+                error: "Invalid arguments"
+            )
+        }
+        
+        let result: Double
+        switch op {
+        case "add":
+            result = a + b
+        case "subtract":
+            result = a - b
+        case "multiply":
+            result = a * b
+        case "divide":
+            if b == 0 {
+                return FfiToolResult(
+                    success: false,
+                    outputJson: "null",
+                    error: "Division by zero"
+                )
+            }
+            result = a / b
+        default:
+            return FfiToolResult(
+                success: false,
+                outputJson: "null",
+                error: "Unknown operation: \(op)"
+            )
+        }
+        
+        let output = ["result": result]
+        guard let outputData = try? JSONSerialization.data(withJSONObject: output),
+              let outputJson = String(data: outputData, encoding: .utf8) else {
+            return FfiToolResult(
+                success: false,
+                outputJson: "null",
+                error: "Failed to serialize output"
+            )
+        }
+        
+        return FfiToolResult(
+            success: true,
+            outputJson: outputJson,
+            error: nil
+        )
+    }
+}
+
+// Usage
+let registry = ToolRegistry()
+try registry.registerTool(tool: CalculatorTool())
+
+print("Registered tools:")
+for tool in registry.listTools() {
+    print("  - \(tool.name): \(tool.description)")
+}
+
+let result = try registry.executeTool(
+    name: "calculator",
+    argumentsJson: "{\"operation\": \"add\", \"a\": 3, \"b\": 7}"
+)
+
+print("Success: \(result.success)")
+print("Output: \(result.outputJson)")
+```
+
+### Example 6: Result Type
+
+```swift
+import MoFA
+import Foundation
+
+enum AgentResult<T> {
+    case success(T)
+    case failure(Error)
+}
+
+func createAgent(apiKey: String) -> AgentResult<LLMAgent> {
+    do {
+        let builder = try newLlmAgentBuilder()
+            .setOpenaiProvider(apiKey: apiKey, baseUrl: nil, model: "gpt-3.5-turbo")
+        let agent = try builder.build()
+        return .success(agent)
+    } catch {
+        return .failure(error)
+    }
+}
+
+func askQuestion(agent: LLMAgent, question: String) -> AgentResult<String> {
+    do {
+        let answer = try agent.ask(question: question)
+        return .success(answer)
+    } catch {
+        return .failure(error)
+    }
+}
+
+// Usage
+guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+    print("API key not set")
+    exit(1)
+}
+
+switch createAgent(apiKey: apiKey) {
+case .success(let agent):
+    switch askQuestion(agent: agent, question: "What is Swift?") {
+    case .success(let answer):
+        print("Answer: \(answer)")
+    case .failure(let error):
+        print("Error: \(error.localizedDescription)")
+    }
+case .failure(let error):
+    print("Failed to create agent: \(error.localizedDescription)")
+}
+```
+
+## Error Handling
+
+### Exception Types
+
+```swift
+import MoFA
+
+do {
+    let builder = try newLlmAgentBuilder()
+        .setOpenaiProvider(
+            apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "",
+            baseUrl: nil,
+            model: "gpt-3.5-turbo"
+        )
+    let agent = try builder.build()
+    
+    let response = try agent.ask(question: "Hello!")
+    print(response)
+    
+} catch let error as MoFaError {
+    let message = error.localizedDescription
+    
+    if message.contains("ConfigError") {
+        print("Configuration error: \(message)")
+    } else if message.contains("RuntimeError") {
+        print("Runtime error: \(message)")
+    } else if message.contains("LLMError") {
+        print("LLM provider error: \(message)")
+    } else if message.contains("IoError") {
+        print("I/O error: \(message)")
+    } else if message.contains("InvalidArgument") {
+        print("Invalid argument: \(message)")
+    } else if message.contains("ToolError") {
+        print("Tool execution error: \(message)")
+    } else if message.contains("SessionError") {
+        print("Session management error: \(message)")
+    } else {
+        print("Unknown error: \(message)")
+    }
+} catch {
+    print("Unexpected error: \(error)")
+}
+```
+
+### Custom Error Enum
+
+```swift
+import MoFA
+
+enum AppError: Error, LocalizedError {
+    case configuration(String)
+    case runtime(String)
+    case llm(String)
+    case unknown(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .configuration(let msg):
+            return "Configuration error: \(msg)"
+        case .runtime(let msg):
+            return "Runtime error: \(msg)"
+        case .llm(let msg):
+            return "LLM error: \(msg)"
+        case .unknown(let msg):
+            return "Unknown error: \(msg)"
+        }
+    }
+    
+    static func from(_ error: MoFaError) -> AppError {
+        let message = error.localizedDescription
+        if message.contains("ConfigError") {
+            return .configuration(message)
+        } else if message.contains("RuntimeError") {
+            return .runtime(message)
+        } else if message.contains("LLMError") {
+            return .llm(message)
+        } else {
+            return .unknown(message)
+        }
+    }
+}
+
+do {
+    let agent = try createAgent()
+    let response = try agent.ask(question: "Hello!")
+    print(response)
+} catch let error as MoFaError {
+    let appError = AppError.from(error)
+    print(appError.localizedDescription)
+} catch {
+    print("Unexpected error: \(error)")
+}
+```
+
+## Best Practices
+
+### 1. Use Environment Variables
+
+```swift
+extension ProcessInfo {
+    var openAIApiKey: String? {
+        environment["OPENAI_API_KEY"]
+    }
+}
+
+guard let apiKey = ProcessInfo.processInfo.openAIApiKey else {
+    fatalError("OPENAI_API_KEY not set")
+}
+```
+
+### 2. Property Wrappers for Agents
+
+```swift
+@propertyWrapper
+struct Agent {
+    private var agent: LLMAgent?
+    
+    var wrappedValue: LLMAgent {
+        get {
+            guard let agent = agent else {
+                fatalError("Agent not initialized")
+            }
+            return agent
+        }
+        set {
+            agent = newValue
+        }
+    }
+    
+    init(apiKey: String, model: String = "gpt-3.5-turbo") {
+        do {
+            let builder = try newLlmAgentBuilder()
+                .setOpenaiProvider(apiKey: apiKey, baseUrl: nil, model: model)
+            self.agent = try builder.build()
+        } catch {
+            fatalError("Failed to create agent: \(error)")
+        }
+    }
+}
+```
+
+### 3. Type-Safe Configuration
+
+```swift
+struct AgentConfiguration {
+    let id: String
+    let name: String
+    let systemPrompt: String
+    let temperature: Float
+    let maxTokens: UInt32
+    let contextWindowSize: UInt32?
+    
+    static let `default` = AgentConfiguration(
+        id: UUID().uuidString,
+        name: "Default Agent",
+        systemPrompt: "You are a helpful assistant.",
+        temperature: 0.7,
+        maxTokens: 1000,
+        contextWindowSize: nil
+    )
+}
+
+extension LLMAgentBuilder {
+    func apply(configuration: AgentConfiguration) -> LLMAgentBuilder {
+        var builder = self
+            .setId(id: configuration.id)
+            .setName(name: configuration.name)
+            .setSystemPrompt(prompt: configuration.systemPrompt)
+            .setTemperature(temperature: configuration.temperature)
+            .setMaxTokens(maxTokens: configuration.maxTokens)
+        
+        if let windowSize = configuration.contextWindowSize {
+            builder = builder.setContextWindowSize(size: windowSize)
+        }
+        
+        return builder
+    }
+}
+```
+
+## Xcode Project Setup
+
+### Adding MoFA to Xcode
+
+<Steps>
+  <Step title="Add Package Dependency">
+    In Xcode, go to File > Add Package Dependencies and enter the MoFA repository URL.
+  </Step>
+  
+  <Step title="Link Binary">
+    Add `libmofa_ffi.dylib` to your target's "Frameworks, Libraries, and Embedded Content".
+  </Step>
+  
+  <Step title="Set Library Search Path">
+    In Build Settings, add the path to the compiled library to "Library Search Paths":
+    ```
+    $(PROJECT_DIR)/../mofa/target/release
+    ```
+  </Step>
+  
+  <Step title="Enable Hardened Runtime">
+    For macOS apps, enable "Disable Library Validation" in signing capabilities.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Library Not Found
+
+```bash
+# If you get: Library not loaded: libmofa_ffi.dylib
+
+# For macOS
+cd mofa
+cargo build --release --features uniffi -p mofa-ffi --target aarch64-apple-darwin
+
+# For iOS simulator
+cargo build --release --features uniffi -p mofa-ffi --target aarch64-apple-ios-sim
+
+# For iOS device
+cargo build --release --features uniffi -p mofa-ffi --target aarch64-apple-ios
+```
+
+### API Key Issues
+
+```swift
+guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+      !apiKey.isEmpty else {
+    fatalError("""
+        OPENAI_API_KEY environment variable not set.
+        Set it in your scheme: Edit Scheme > Run > Arguments > Environment Variables
+        """)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Go Bindings" icon="golang" href="/bindings/go">
+    Use MoFA in Go applications
+  </Card>
+  <Card title="Python Bindings" icon="python" href="/bindings/python">
+    Python integration guide
+  </Card>
+  <Card title="iOS Examples" icon="mobile" href="https://github.com/mofa-org/mofa/tree/main/examples/swift_bindings">
+    Browse iOS example apps
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Complete API documentation
+  </Card>
+</CardGroup>

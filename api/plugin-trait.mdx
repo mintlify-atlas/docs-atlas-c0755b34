@@ -1,0 +1,340 @@
+---
+title: 'AgentPlugin Trait'
+description: 'Core plugin trait defining the plugin lifecycle and execution interface'
+---
+
+The `AgentPlugin` trait is the foundational interface for all plugins in the MoFA framework. It defines the complete plugin lifecycle from loading to execution and unloading.
+
+## Trait Definition
+
+```rust
+#[async_trait]
+pub trait AgentPlugin: Send + Sync {
+    fn metadata(&self) -> &PluginMetadata;
+    fn plugin_id(&self) -> &str;
+    fn plugin_type(&self) -> PluginType;
+    fn state(&self) -> PluginState;
+    
+    async fn load(&mut self, ctx: &PluginContext) -> PluginResult<()>;
+    async fn init_plugin(&mut self) -> PluginResult<()>;
+    async fn start(&mut self) -> PluginResult<()>;
+    async fn pause(&mut self) -> PluginResult<()>;
+    async fn resume(&mut self) -> PluginResult<()>;
+    async fn stop(&mut self) -> PluginResult<()>;
+    async fn unload(&mut self) -> PluginResult<()>;
+    
+    async fn execute(&mut self, input: String) -> PluginResult<String>;
+    async fn health_check(&self) -> PluginResult<bool>;
+    fn stats(&self) -> HashMap<String, serde_json::Value>;
+    
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+}
+```
+
+## Lifecycle Methods
+
+Plugins follow a strict lifecycle with the following states:
+
+### load
+
+Allocate resources and prepare the plugin for initialization.
+
+<ParamField path="ctx" type="&PluginContext">
+  Plugin execution context containing configuration and shared state
+</ParamField>
+
+```rust
+async fn load(&mut self, ctx: &PluginContext) -> PluginResult<()> {
+    // Allocate resources, read configuration
+    self.config = ctx.config.clone();
+    self.state = PluginState::Loaded;
+    Ok(())
+}
+```
+
+### init_plugin
+
+Initialize plugin-specific configuration and state.
+
+```rust
+async fn init_plugin(&mut self) -> PluginResult<()> {
+    // Initialize internal state
+    // Call any setup methods
+    self.state = PluginState::Running;
+    Ok(())
+}
+```
+
+### start
+
+Start the plugin and make it ready for execution.
+
+```rust
+async fn start(&mut self) -> PluginResult<()> {
+    self.state = PluginState::Running;
+    Ok(())
+}
+```
+
+### pause
+
+Temporarily suspend plugin execution (optional).
+
+```rust
+async fn pause(&mut self) -> PluginResult<()> {
+    self.state = PluginState::Paused;
+    Ok(())
+}
+```
+
+### resume
+
+Resume a paused plugin (optional).
+
+```rust
+async fn resume(&mut self) -> PluginResult<()> {
+    self.state = PluginState::Running;
+    Ok(())
+}
+```
+
+### stop
+
+Stop plugin execution.
+
+```rust
+async fn stop(&mut self) -> PluginResult<()> {
+    self.state = PluginState::Paused;
+    Ok(())
+}
+```
+
+### unload
+
+Release all resources and clean up.
+
+```rust
+async fn unload(&mut self) -> PluginResult<()> {
+    // Release resources
+    self.state = PluginState::Unloaded;
+    Ok(())
+}
+```
+
+## Execution Methods
+
+### execute
+
+Execute the plugin's core functionality.
+
+<ParamField path="input" type="String">
+  Input data as a string (typically JSON)
+</ParamField>
+
+<ParamField path="return" type="PluginResult<String>">
+  Execution result as a string (typically JSON)
+</ParamField>
+
+```rust
+async fn execute(&mut self, input: String) -> PluginResult<String> {
+    // Parse input
+    let data: InputType = serde_json::from_str(&input)?;
+    
+    // Execute plugin logic
+    let result = self.process(data).await?;
+    
+    // Return result as JSON
+    Ok(serde_json::to_string(&result)?)
+}
+```
+
+### health_check
+
+Perform a health check on the plugin.
+
+```rust
+async fn health_check(&self) -> PluginResult<bool> {
+    Ok(self.state() == PluginState::Running)
+}
+```
+
+### stats
+
+Return plugin runtime statistics.
+
+```rust
+fn stats(&self) -> HashMap<String, serde_json::Value> {
+    let mut stats = HashMap::new();
+    stats.insert("calls_total".to_string(), json!(self.call_count));
+    stats.insert("state".to_string(), json!(format!("{:?}", self.state)));
+    stats
+}
+```
+
+## Metadata Methods
+
+### metadata
+
+Return plugin metadata.
+
+```rust
+fn metadata(&self) -> &PluginMetadata {
+    &self.metadata
+}
+```
+
+### plugin_id
+
+Convenience method to get the plugin ID.
+
+```rust
+fn plugin_id(&self) -> &str {
+    &self.metadata().id
+}
+```
+
+### plugin_type
+
+Return the plugin type.
+
+```rust
+fn plugin_type(&self) -> PluginType {
+    self.metadata().plugin_type.clone()
+}
+```
+
+## Type Casting Methods
+
+These methods enable downcasting to concrete plugin types:
+
+```rust
+fn as_any(&self) -> &dyn Any {
+    self
+}
+
+fn as_any_mut(&mut self) -> &mut dyn Any {
+    self
+}
+
+fn into_any(self: Box<Self>) -> Box<dyn Any> {
+    self
+}
+```
+
+## Plugin States
+
+```rust
+pub enum PluginState {
+    Unloaded,      // Not initialized
+    Loading,       // Currently loading
+    Loaded,        // Loaded and ready
+    Running,       // Active and executing
+    Paused,        // Temporarily suspended
+    Error(String), // Error state with message
+}
+```
+
+## Plugin Types
+
+```rust
+pub enum PluginType {
+    LLM,           // LLM capability plugin
+    Tool,          // Tool calling plugin
+    Storage,       // Storage plugin
+    Memory,        // Memory management plugin
+    VectorDB,      // Vector database plugin
+    Communication, // Communication plugin
+    Monitor,       // Monitor plugin
+    Skill,         // Agent Skills plugin
+    Custom(String),// Custom plugin type
+}
+```
+
+## Example Implementation
+
+```rust
+use mofa_kernel::plugin::{AgentPlugin, PluginMetadata, PluginState, PluginType};
+use std::any::Any;
+
+struct MyPlugin {
+    metadata: PluginMetadata,
+    state: PluginState,
+    call_count: u64,
+}
+
+impl MyPlugin {
+    pub fn new() -> Self {
+        let metadata = PluginMetadata::new(
+            "my-plugin",
+            "My Custom Plugin",
+            PluginType::Custom("example".to_string()),
+        )
+        .with_description("An example plugin implementation");
+
+        Self {
+            metadata,
+            state: PluginState::Unloaded,
+            call_count: 0,
+        }
+    }
+}
+
+#[async_trait]
+impl AgentPlugin for MyPlugin {
+    fn metadata(&self) -> &PluginMetadata {
+        &self.metadata
+    }
+
+    fn state(&self) -> PluginState {
+        self.state.clone()
+    }
+
+    async fn load(&mut self, ctx: &PluginContext) -> PluginResult<()> {
+        self.state = PluginState::Loaded;
+        Ok(())
+    }
+
+    async fn init_plugin(&mut self) -> PluginResult<()> {
+        self.state = PluginState::Running;
+        Ok(())
+    }
+
+    async fn start(&mut self) -> PluginResult<()> {
+        self.state = PluginState::Running;
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> PluginResult<()> {
+        self.state = PluginState::Paused;
+        Ok(())
+    }
+
+    async fn unload(&mut self) -> PluginResult<()> {
+        self.state = PluginState::Unloaded;
+        Ok(())
+    }
+
+    async fn execute(&mut self, input: String) -> PluginResult<String> {
+        self.call_count += 1;
+        Ok(format!("Processed: {}", input))
+    }
+
+    fn stats(&self) -> HashMap<String, serde_json::Value> {
+        let mut stats = HashMap::new();
+        stats.insert("calls_total".to_string(), json!(self.call_count));
+        stats
+    }
+
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> { self }
+}
+```
+
+## Related
+
+- [ToolPlugin](/api/tool-plugin) - Tool execution plugin
+- [LLMPlugin](/api/llm-plugin) - LLM integration plugin
+- [RhaiPlugin](/api/rhai-plugin) - Runtime scripting plugin

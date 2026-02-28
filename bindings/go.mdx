@@ -1,0 +1,989 @@
+---
+title: 'Go Bindings'
+description: 'Native Go bindings for MoFA with goroutine support'
+---
+
+## Overview
+
+MoFA provides native Go bindings generated through Mozilla UniFFI. These bindings offer idiomatic Go APIs with goroutine support, standard error handling, and seamless integration with Go applications.
+
+## Installation
+
+<Tabs>
+  <Tab title="Go Get">
+    ```bash
+    go get github.com/mofa-org/mofa-go
+    ```
+  </Tab>
+  
+  <Tab title="From Source">
+    ```bash
+    # Install UniFFI bindgen for Go
+    cargo install uniffi-bindgen-go --git https://github.com/NordSecurity/uniffi-bindgen-go
+    
+    # Build FFI library
+    cd mofa
+    cargo build --release --features uniffi -p mofa-ffi
+    
+    # Generate Go bindings
+    cd crates/mofa-ffi/bindings/go
+    ./generate-go.sh
+    
+    # Initialize Go module
+    go mod init mofa-example
+    go mod tidy
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+### Basic LLM Agent
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func main() {
+	// Set your API key
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		fmt.Println("Error: OPENAI_API_KEY not set")
+		os.Exit(1)
+	}
+
+	// Create an agent using the builder pattern
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetId("my-agent")
+	builder.SetName("Go Agent")
+	builder.SetSystemPrompt("You are a helpful assistant.")
+	builder.SetTemperature(0.7)
+	builder.SetMaxTokens(1000)
+	builder.SetOpenaiProvider(apiKey, os.Getenv("OPENAI_BASE_URL"), "gpt-3.5-turbo")
+
+	agent, err := builder.Build()
+	if err != nil {
+		fmt.Printf("Error building agent: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Simple Q&A (no context retention)
+	answer, err := agent.Ask("What is Go?")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	} else {
+		fmt.Printf("Answer: %s\n", answer)
+	}
+
+	// Multi-turn chat (with context)
+	agent.Chat("My favorite language is Go.")
+	response, err := agent.Chat("What did I just tell you?")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	} else {
+		fmt.Printf("Response: %s\n", response)
+	}
+
+	// Get conversation history
+	history := agent.GetHistory()
+	fmt.Printf("Total messages: %d\n", len(history))
+
+	// Clear history
+	agent.ClearHistory()
+}
+```
+
+## API Reference
+
+### Package Functions
+
+<ParamField path="GetVersion" type="() string">
+  Get the MoFA SDK version string.
+</ParamField>
+
+<ParamField path="IsDoraAvailable" type="() bool">
+  Check if Dora-rs distributed runtime is available.
+</ParamField>
+
+<ParamField path="NewLlmAgentBuilder" type="() *LLMAgentBuilder">
+  Create a new LLM agent builder.
+</ParamField>
+
+### LLMAgentBuilder
+
+<ParamField path="SetId" type="(id string) *LLMAgentBuilder">
+  Set the agent ID. If not set, a UUID will be generated.
+</ParamField>
+
+<ParamField path="SetName" type="(name string) *LLMAgentBuilder">
+  Set the agent name for display purposes.
+</ParamField>
+
+<ParamField path="SetSystemPrompt" type="(prompt string) *LLMAgentBuilder">
+  Set the system prompt that defines agent behavior.
+</ParamField>
+
+<ParamField path="SetTemperature" type="(temp float32) *LLMAgentBuilder">
+  Set the LLM temperature (0.0 to 1.0). Higher values produce more random outputs.
+</ParamField>
+
+<ParamField path="SetMaxTokens" type="(tokens uint32) *LLMAgentBuilder">
+  Set the maximum number of tokens to generate.
+</ParamField>
+
+<ParamField path="SetSessionId" type="(id string) *LLMAgentBuilder">
+  Set the initial session ID for conversation tracking.
+</ParamField>
+
+<ParamField path="SetUserId" type="(id string) *LLMAgentBuilder">
+  Set the user ID for multi-tenant scenarios.
+</ParamField>
+
+<ParamField path="SetTenantId" type="(id string) *LLMAgentBuilder">
+  Set the tenant ID for multi-tenant isolation.
+</ParamField>
+
+<ParamField path="SetContextWindowSize" type="(size uint32) *LLMAgentBuilder">
+  Set the sliding context window size (in conversation rounds).
+</ParamField>
+
+<ParamField path="SetOpenaiProvider" type="(apiKey, baseUrl, model string) *LLMAgentBuilder">
+  Configure the OpenAI provider. Pass empty strings for defaults.
+</ParamField>
+
+<ParamField path="Build" type="() (*LLMAgent, error)" required>
+  Build the agent. Returns error if configuration is invalid.
+</ParamField>
+
+### LLMAgent
+
+<ParamField path="AgentId" type="() (string, error)">
+  Get the agent ID.
+</ParamField>
+
+<ParamField path="Name" type="() (string, error)">
+  Get the agent name.
+</ParamField>
+
+<ParamField path="Ask" type="(question string) (string, error)">
+  Simple Q&A without context retention. Each call is independent.
+</ParamField>
+
+<ParamField path="Chat" type="(message string) (string, error)">
+  Multi-turn chat with context retention. Maintains conversation history.
+</ParamField>
+
+<ParamField path="ClearHistory" type="()">
+  Clear the conversation history.
+</ParamField>
+
+<ParamField path="GetHistory" type="() []ChatMessage">
+  Get the full conversation history as a slice of messages.
+</ParamField>
+
+<ParamField path="GetLastOutput" type="() (*AgentOutputInfo, error)">
+  Get structured output from the last execution (tools used, token usage, etc.).
+</ParamField>
+
+## Examples
+
+### Example 1: Concurrent Goroutines
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+	"sync"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func main() {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		fmt.Println("OPENAI_API_KEY not set")
+		return
+	}
+
+	// Create agent
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetName("Concurrent Agent")
+	builder.SetOpenaiProvider(apiKey, "", "gpt-3.5-turbo")
+
+	agent, err := builder.Build()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	// Concurrent queries using goroutines
+	questions := []string{
+		"What is Go?",
+		"What is Rust?",
+		"What is Python?",
+	}
+
+	var wg sync.WaitGroup
+	results := make([]string, len(questions))
+
+	for i, question := range questions {
+		wg.Add(1)
+		go func(idx int, q string) {
+			defer wg.Done()
+			answer, err := agent.Ask(q)
+			if err != nil {
+				fmt.Printf("Error for question %d: %v\n", idx, err)
+				return
+			}
+			results[idx] = answer
+		}(i, question)
+	}
+
+	wg.Wait()
+
+	// Print results
+	for i, result := range results {
+		if len(result) > 100 {
+			result = result[:100] + "..."
+		}
+		fmt.Printf("Result %d: %s\n", i+1, result)
+	}
+}
+```
+
+### Example 2: Multi-Provider Support
+
+<CodeGroup>
+
+```go OpenAI
+package main
+
+import (
+	"fmt"
+	"os"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func createOpenAIAgent() (*mofa.LLMAgent, error) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY not set")
+	}
+
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetName("OpenAI Agent")
+	builder.SetOpenaiProvider(apiKey, "", "gpt-4")
+
+	return builder.Build()
+}
+
+func main() {
+	agent, err := createOpenAIAgent()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	response, _ := agent.Ask("What is Go?")
+	fmt.Println(response)
+}
+```
+
+```go Ollama (Local)
+package main
+
+import (
+	"fmt"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func createOllamaAgent() (*mofa.LLMAgent, error) {
+	config := mofa.LLMConfig{
+		Provider:     mofa.LLMProviderTypeOllama,
+		Model:        mofa.StringPtr("llama2"),
+		BaseUrl:      mofa.StringPtr("http://localhost:11434"),
+		Temperature:  mofa.Float32Ptr(0.7),
+		MaxTokens:    mofa.Uint32Ptr(500),
+		SystemPrompt: mofa.StringPtr("You are a helpful assistant."),
+	}
+
+	return mofa.LLMAgentFromConfig(config, "ollama-agent", "Ollama Agent")
+}
+
+func main() {
+	agent, err := createOllamaAgent()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	response, _ := agent.Chat("Tell me a joke about Go.")
+	fmt.Println(response)
+}
+```
+
+```go Azure OpenAI
+package main
+
+import (
+	"fmt"
+	"os"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func createAzureAgent() (*mofa.LLMAgent, error) {
+	config := mofa.LLMConfig{
+		Provider:     mofa.LLMProviderTypeAzure,
+		Model:        mofa.StringPtr("gpt-4"),
+		ApiKey:       mofa.StringPtr(os.Getenv("AZURE_API_KEY")),
+		BaseUrl:      mofa.StringPtr("https://your-resource.openai.azure.com"),
+		Deployment:   mofa.StringPtr("gpt-4-deployment"),
+		Temperature:  mofa.Float32Ptr(0.7),
+		MaxTokens:    mofa.Uint32Ptr(1000),
+		SystemPrompt: mofa.StringPtr("You are a helpful assistant."),
+	}
+
+	return mofa.LLMAgentFromConfig(config, "azure-agent", "Azure Agent")
+}
+```
+
+</CodeGroup>
+
+### Example 3: Session Management
+
+```go
+package main
+
+import (
+	"fmt"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func main() {
+	// Create in-memory session manager
+	manager := mofa.NewSessionManagerInMemory()
+
+	// Get or create a session
+	session, err := manager.GetOrCreate("user-123")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	// Add messages
+	session.AddMessage("user", "Hello!")
+	session.AddMessage("assistant", "Hi there! How can I help?")
+	session.AddMessage("user", "What's the weather like?")
+
+	// Retrieve history
+	history, err := session.GetHistory(10)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Println("Conversation history:")
+	for _, msg := range history {
+		fmt.Printf("%s: %s\n", msg.Role, msg.Content)
+	}
+
+	// Store metadata
+	err = session.SetMetadata("user_name", `"Alice"`)
+	if err != nil {
+		fmt.Printf("Error setting metadata: %v\n", err)
+	}
+
+	err = session.SetMetadata("preferences", `{"theme": "dark"}`)
+	if err != nil {
+		fmt.Printf("Error setting metadata: %v\n", err)
+	}
+
+	// Retrieve metadata
+	userName := session.GetMetadata("user_name")
+	fmt.Printf("User name: %s\n", userName)
+
+	// Save session
+	err = manager.SaveSession(session)
+	if err != nil {
+		fmt.Printf("Error saving session: %v\n", err)
+	}
+
+	// List all sessions
+	allSessions, err := manager.ListSessions()
+	if err != nil {
+		fmt.Printf("Error listing sessions: %v\n", err)
+	}
+	fmt.Printf("Total sessions: %d\n", len(allSessions))
+
+	// Delete session
+	deleted, err := manager.DeleteSession("user-123")
+	if err != nil {
+		fmt.Printf("Error deleting session: %v\n", err)
+	}
+	fmt.Printf("Session deleted: %v\n", deleted)
+}
+```
+
+### Example 4: Custom Tool Registration
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+// CalculatorTool implements FfiToolCallback
+type CalculatorTool struct{}
+
+func (t *CalculatorTool) Name() string {
+	return "calculator"
+}
+
+func (t *CalculatorTool) Description() string {
+	return "Perform basic arithmetic operations"
+}
+
+func (t *CalculatorTool) ParametersSchemaJson() string {
+	return `{
+		"type": "object",
+		"properties": {
+			"operation": {
+				"type": "string",
+				"enum": ["add", "subtract", "multiply", "divide"]
+			},
+			"a": {"type": "number"},
+			"b": {"type": "number"}
+		},
+		"required": ["operation", "a", "b"]
+	}`
+}
+
+func (t *CalculatorTool) Execute(argumentsJson string) mofa.FfiToolResult {
+	var args struct {
+		Operation string  `json:"operation"`
+		A         float64 `json:"a"`
+		B         float64 `json:"b"`
+	}
+
+	err := json.Unmarshal([]byte(argumentsJson), &args)
+	if err != nil {
+		return mofa.FfiToolResult{
+			Success:    false,
+			OutputJson: "null",
+			Error:      mofa.StringPtr(err.Error()),
+		}
+	}
+
+	var result float64
+	switch args.Operation {
+	case "add":
+		result = args.A + args.B
+	case "subtract":
+		result = args.A - args.B
+	case "multiply":
+		result = args.A * args.B
+	case "divide":
+		if args.B == 0 {
+			return mofa.FfiToolResult{
+				Success:    false,
+				OutputJson: "null",
+				Error:      mofa.StringPtr("Division by zero"),
+			}
+		}
+		result = args.A / args.B
+	default:
+		return mofa.FfiToolResult{
+			Success:    false,
+			OutputJson: "null",
+			Error:      mofa.StringPtr(fmt.Sprintf("Unknown operation: %s", args.Operation)),
+		}
+	}
+
+	output := map[string]float64{"result": result}
+	outputJson, _ := json.Marshal(output)
+
+	return mofa.FfiToolResult{
+		Success:    true,
+		OutputJson: string(outputJson),
+		Error:      nil,
+	}
+}
+
+func main() {
+	// Create registry and register tool
+	registry := mofa.NewToolRegistry()
+	err := registry.RegisterTool(&CalculatorTool{})
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	// List registered tools
+	fmt.Println("Registered tools:")
+	tools := registry.ListTools()
+	for _, tool := range tools {
+		fmt.Printf("  - %s: %s\n", tool.Name, tool.Description)
+	}
+
+	// Execute the tool
+	result, err := registry.ExecuteTool(
+		"calculator",
+		`{"operation": "add", "a": 3, "b": 7}`,
+	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Success: %v\n", result.Success)
+	fmt.Printf("Output: %s\n", result.OutputJson)
+}
+```
+
+### Example 5: Context and Cancellation
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func askWithTimeout(agent *mofa.LLMAgent, question string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	type result struct {
+		answer string
+		err    error
+	}
+
+	resultChan := make(chan result, 1)
+
+	go func() {
+		answer, err := agent.Ask(question)
+		resultChan <- result{answer, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("request timeout: %w", ctx.Err())
+	case res := <-resultChan:
+		return res.answer, res.err
+	}
+}
+
+func main() {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		fmt.Println("OPENAI_API_KEY not set")
+		return
+	}
+
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetOpenaiProvider(apiKey, "", "gpt-3.5-turbo")
+
+	agent, err := builder.Build()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	// Ask with 5-second timeout
+	answer, err := askWithTimeout(agent, "What is Go?", 5*time.Second)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Answer: %s\n", answer)
+}
+```
+
+### Example 6: Error Handling Patterns
+
+```go
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+type AppError struct {
+	Kind    string
+	Message string
+	Err     error
+}
+
+func (e *AppError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Kind, e.Message)
+}
+
+func (e *AppError) Unwrap() error {
+	return e.Err
+}
+
+func createAgent(apiKey string) (*mofa.LLMAgent, error) {
+	if apiKey == "" {
+		return nil, &AppError{
+			Kind:    "ConfigError",
+			Message: "API key is required",
+		}
+	}
+
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetOpenaiProvider(apiKey, "", "gpt-3.5-turbo")
+
+	agent, err := builder.Build()
+	if err != nil {
+		return nil, &AppError{
+			Kind:    "RuntimeError",
+			Message: "Failed to build agent",
+			Err:     err,
+		}
+	}
+
+	return agent, nil
+}
+
+func askQuestion(agent *mofa.LLMAgent, question string) (string, error) {
+	answer, err := agent.Ask(question)
+	if err != nil {
+		return "", &AppError{
+			Kind:    "LLMError",
+			Message: "Failed to get answer",
+			Err:     err,
+		}
+	}
+	return answer, nil
+}
+
+func main() {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+
+	agent, err := createAgent(apiKey)
+	if err != nil {
+		var appErr *AppError
+		if errors.As(err, &appErr) {
+			fmt.Printf("%s: %s\n", appErr.Kind, appErr.Message)
+			if appErr.Err != nil {
+				fmt.Printf("Underlying error: %v\n", appErr.Err)
+			}
+		} else {
+			fmt.Printf("Error: %v\n", err)
+		}
+		return
+	}
+
+	answer, err := askQuestion(agent, "What is Go?")
+	if err != nil {
+		var appErr *AppError
+		if errors.As(err, &appErr) {
+			fmt.Printf("%s: %s\n", appErr.Kind, appErr.Message)
+		} else {
+			fmt.Printf("Error: %v\n", err)
+		}
+		return
+	}
+
+	fmt.Printf("Answer: %s\n", answer)
+}
+```
+
+## Error Handling
+
+### Standard Error Handling
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func handleMoFaError(err error) {
+	if err == nil {
+		return
+	}
+
+	errorMsg := err.Error()
+
+	switch {
+	case strings.Contains(errorMsg, "ConfigError"):
+		fmt.Printf("Configuration error: %v\n", err)
+	case strings.Contains(errorMsg, "RuntimeError"):
+		fmt.Printf("Runtime error: %v\n", err)
+	case strings.Contains(errorMsg, "LLMError"):
+		fmt.Printf("LLM provider error: %v\n", err)
+	case strings.Contains(errorMsg, "IoError"):
+		fmt.Printf("I/O error: %v\n", err)
+	case strings.Contains(errorMsg, "InvalidArgument"):
+		fmt.Printf("Invalid argument: %v\n", err)
+	case strings.Contains(errorMsg, "ToolError"):
+		fmt.Printf("Tool execution error: %v\n", err)
+	case strings.Contains(errorMsg, "SessionError"):
+		fmt.Printf("Session management error: %v\n", err)
+	default:
+		fmt.Printf("Unknown error: %v\n", err)
+	}
+}
+
+func main() {
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetOpenaiProvider(
+		os.Getenv("OPENAI_API_KEY"),
+		"",
+		"gpt-3.5-turbo",
+	)
+
+	agent, err := builder.Build()
+	if err != nil {
+		handleMoFaError(err)
+		return
+	}
+
+	response, err := agent.Ask("Hello!")
+	if err != nil {
+		handleMoFaError(err)
+		return
+	}
+
+	fmt.Println(response)
+}
+```
+
+### Retry Logic
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	mofa "github.com/mofa-org/mofa-go"
+)
+
+func askWithRetry(agent *mofa.LLMAgent, question string, maxRetries int) (string, error) {
+	var lastErr error
+
+	for i := 0; i < maxRetries; i++ {
+		answer, err := agent.Ask(question)
+		if err == nil {
+			return answer, nil
+		}
+
+		lastErr = err
+		fmt.Printf("Attempt %d failed: %v\n", i+1, err)
+
+		if i < maxRetries-1 {
+			backoff := time.Duration(1<<uint(i)) * time.Second
+			fmt.Printf("Retrying in %v...\n", backoff)
+			time.Sleep(backoff)
+		}
+	}
+
+	return "", fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
+}
+```
+
+## Best Practices
+
+### 1. Use Environment Variables
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func getAPIKey() (string, error) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return "", fmt.Errorf("OPENAI_API_KEY environment variable not set")
+	}
+	return apiKey, nil
+}
+```
+
+### 2. Builder Pattern Helper
+
+```go
+type AgentConfig struct {
+	ID               string
+	Name             string
+	SystemPrompt     string
+	Temperature      float32
+	MaxTokens        uint32
+	ContextWindowSize *uint32
+}
+
+func buildAgent(config AgentConfig, apiKey string) (*mofa.LLMAgent, error) {
+	builder := mofa.NewLlmAgentBuilder()
+	builder.SetId(config.ID)
+	builder.SetName(config.Name)
+	builder.SetSystemPrompt(config.SystemPrompt)
+	builder.SetTemperature(config.Temperature)
+	builder.SetMaxTokens(config.MaxTokens)
+
+	if config.ContextWindowSize != nil {
+		builder.SetContextWindowSize(*config.ContextWindowSize)
+	}
+
+	builder.SetOpenaiProvider(apiKey, "", "gpt-3.5-turbo")
+
+	return builder.Build()
+}
+```
+
+### 3. Resource Pool
+
+```go
+type AgentPool struct {
+	agents []*mofa.LLMAgent
+	current int
+	mu      sync.Mutex
+}
+
+func NewAgentPool(size int, apiKey string) (*AgentPool, error) {
+	agents := make([]*mofa.LLMAgent, size)
+
+	for i := 0; i < size; i++ {
+		builder := mofa.NewLlmAgentBuilder()
+		builder.SetId(fmt.Sprintf("agent-%d", i))
+		builder.SetOpenaiProvider(apiKey, "", "gpt-3.5-turbo")
+
+		agent, err := builder.Build()
+		if err != nil {
+			return nil, err
+		}
+		agents[i] = agent
+	}
+
+	return &AgentPool{agents: agents}, nil
+}
+
+func (p *AgentPool) Get() *mofa.LLMAgent {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	agent := p.agents[p.current]
+	p.current = (p.current + 1) % len(p.agents)
+	return agent
+}
+```
+
+## Go Module Setup
+
+### go.mod Example
+
+```go
+module github.com/example/mofa-app
+
+go 1.21
+
+require github.com/mofa-org/mofa-go v0.1.0
+```
+
+### CGO Configuration
+
+```bash
+# Set library path for CGO
+export CGO_LDFLAGS="-L/path/to/mofa/target/release"
+export LD_LIBRARY_PATH="/path/to/mofa/target/release:$LD_LIBRARY_PATH"
+
+# Build
+go build -o app main.go
+
+# Run
+./app
+```
+
+## Troubleshooting
+
+### Library Not Found
+
+```bash
+# If you get: error while loading shared libraries: libmofa_ffi.so
+
+# Build the library
+cd mofa
+cargo build --release --features uniffi -p mofa-ffi
+
+# Set library path
+export LD_LIBRARY_PATH=/path/to/mofa/target/release:$LD_LIBRARY_PATH
+
+# Or copy to system library directory
+sudo cp target/release/libmofa_ffi.so /usr/local/lib/
+sudo ldconfig
+```
+
+### CGO Issues
+
+```bash
+# If you get CGO errors
+export CGO_ENABLED=1
+export CC=gcc
+
+# Verify CGO is working
+go env CGO_ENABLED
+```
+
+### API Key Issues
+
+```go
+import "os"
+
+apiKey := os.Getenv("OPENAI_API_KEY")
+if apiKey == "" {
+	panic("OPENAI_API_KEY not set. Set it with: export OPENAI_API_KEY=your-key")
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Python Bindings" icon="python" href="/bindings/python">
+    Python integration guide
+  </Card>
+  <Card title="Java Bindings" icon="java" href="/bindings/java">
+    Java integration with Maven/Gradle
+  </Card>
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples/go_bindings">
+    Browse full Go examples
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Complete API documentation
+  </Card>
+</CardGroup>

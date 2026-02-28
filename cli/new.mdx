@@ -1,0 +1,506 @@
+---
+title: "mofa new"
+description: "Create a new MoFA agent project from templates"
+icon: "plus"
+---
+
+The `mofa new` command scaffolds a new agent project with all necessary files and dependencies.
+
+## Usage
+
+```bash
+mofa new <NAME> [OPTIONS]
+```
+
+## Arguments
+
+### `<NAME>`
+
+**Required.** The name of the project to create.
+
+- Used as the project directory name
+- Used as the Rust crate name (converted to snake_case)
+- Must be a valid directory name
+
+```bash
+mofa new my-agent
+```
+
+## Options
+
+### `-t, --template <TEMPLATE>`
+
+Project template to use.
+
+- **Type:** String
+- **Default:** `basic`
+
+**Available Templates:**
+
+| Template | Description |
+|----------|-------------|
+| `basic` | Simple LLM agent with OpenAI integration |
+| `llm` | Advanced LLM agent with full API examples |
+| `axum` / `http` | HTTP service with REST API endpoints |
+| `python` / `py` | Python project with UniFFI bindings |
+
+```bash
+# Create with specific template
+mofa new my-agent --template llm
+
+# Create HTTP service
+mofa new api-service --template axum
+
+# Create Python project
+mofa new py-agent --template python
+```
+
+### `-o, --output <DIRECTORY>`
+
+Output directory for the project.
+
+- **Type:** Path
+- **Default:** Current directory
+
+The project will be created at `<DIRECTORY>/<NAME>`.
+
+```bash
+# Create in specific directory
+mofa new my-agent --output ~/projects
+# Creates: ~/projects/my-agent
+
+# Create in current directory (default)
+mofa new my-agent
+# Creates: ./my-agent
+```
+
+## Templates
+
+### Basic Template
+
+A minimal LLM agent with essential dependencies.
+
+```bash
+mofa new my-agent
+# or explicitly
+mofa new my-agent --template basic
+```
+
+**Generated files:**
+
+```
+my-agent/
+├── Cargo.toml
+├── src/
+│   └── main.rs
+└── .env.example
+```
+
+**Key features:**
+- OpenAI provider integration
+- Basic LLMAgentBuilder usage
+- Environment variable configuration
+
+**Next steps:**
+
+```bash
+cd my-agent
+export OPENAI_API_KEY="sk-..."
+cargo run
+```
+
+### LLM Template
+
+Advanced LLM agent with comprehensive examples.
+
+```bash
+mofa new my-agent --template llm
+```
+
+**Generated files:**
+
+```
+my-agent/
+├── Cargo.toml
+├── src/
+│   └── main.rs
+└── .env.example
+```
+
+**Key features:**
+- Full LLMAgentBuilder API demonstration
+- Single-turn Q&A (`ask` method)
+- Multi-turn conversation (`chat` method)
+- Configurable temperature and token limits
+- Detailed inline documentation
+
+**Example code:**
+
+```rust
+let agent = LLMAgentBuilder::new()
+    .with_id(Uuid::new_v4().to_string())
+    .with_name("My LLM Agent")
+    .with_provider(Arc::new(OpenAIProvider::from_env()))
+    .with_system_prompt("You are a helpful AI assistant.")
+    .with_temperature(0.7)
+    .with_max_tokens(2048)
+    .build();
+
+// Simple Q&A
+let response = agent.ask("Hello!").await?;
+
+// Multi-turn conversation
+let r1 = agent.chat("My name is Alice.").await?;
+let r2 = agent.chat("What's my name?").await?;
+```
+
+### Axum / HTTP Template
+
+Production-ready HTTP service with REST API.
+
+```bash
+mofa new api-service --template axum
+# or
+mofa new api-service --template http
+```
+
+**Generated files:**
+
+```
+api-service/
+├── Cargo.toml
+├── README.md
+├── src/
+│   └── main.rs
+├── .env.example
+└── .gitignore
+```
+
+**Key features:**
+- Axum web framework integration
+- REST API endpoints:
+  - `POST /api/chat` - Single-turn chat
+  - `POST /api/chat/session` - Multi-turn session chat
+  - `GET /api/sessions` - List sessions
+  - `DELETE /api/sessions/{id}` - Delete session
+  - `GET /api/health` - Health check
+- In-memory session storage
+- CORS support
+- Structured logging with tracing
+- Production-ready error handling
+
+**API Example:**
+
+```bash
+# Start the service
+cd api-service
+export OPENAI_API_KEY="sk-..."
+cargo run
+
+# Test single-turn chat
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!"}'
+
+# Test multi-turn session chat
+curl -X POST http://localhost:3000/api/chat/session \
+  -H "Content-Type: application/json" \
+  -d '{"message": "My name is Alice"}'
+```
+
+**Environment variables:**
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export SERVICE_HOST="127.0.0.1"  # default
+export SERVICE_PORT="3000"        # default
+export RUST_LOG="info,mofa=debug"
+```
+
+### Python Template
+
+Python project with UniFFI bindings.
+
+```bash
+mofa new py-agent --template python
+# or
+mofa new py-agent --template py
+```
+
+**Generated files:**
+
+```
+py-agent/
+├── main.py
+├── requirements.txt
+├── agent.yml
+├── README.md
+└── .gitignore
+```
+
+**Key features:**
+- UniFFI Python bindings support
+- Fallback to OpenAI Python SDK
+- YAML configuration
+- Environment variable substitution
+- Simple Q&A and multi-turn chat
+
+**Configuration (agent.yml):**
+
+```yaml
+agent:
+  id: "py-agent-001"
+  name: "py-agent"
+  description: "A helpful LLM-powered assistant (Python)"
+  capabilities:
+    - llm
+    - chat
+
+llm:
+  provider: openai
+  model: gpt-4o
+  api_key: ${OPENAI_API_KEY}
+  temperature: 0.7
+  max_tokens: 4096
+  system_prompt: |
+    You are a helpful AI assistant.
+```
+
+**Next steps:**
+
+```bash
+cd py-agent
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set API key
+export OPENAI_API_KEY="sk-..."
+
+# Run
+python main.py
+```
+
+## Examples
+
+### Create basic agent
+
+```bash
+mofa new my-agent
+```
+
+**Output:**
+
+```
+→ Creating new MoFA project: my-agent
+  Template: basic
+  Directory: my-agent
+✓ Project created successfully!
+
+Next steps:
+  cd my-agent
+  export OPENAI_API_KEY='sk-...'
+  cargo run
+```
+
+### Create HTTP service in specific directory
+
+```bash
+mofa new api-service --template axum --output ~/projects
+```
+
+**Output:**
+
+```
+→ Creating new MoFA project: api-service
+  Template: axum
+  Directory: /home/user/projects/api-service
+✓ Project created successfully!
+
+Next steps:
+  cd api-service
+  export OPENAI_API_KEY='sk-...'
+  cargo run
+```
+
+### Create Python project
+
+```bash
+mofa new py-agent --template python
+```
+
+**Output:**
+
+```
+→ Creating new MoFA project: py-agent
+  Template: python
+  Directory: py-agent
+✓ Project created successfully!
+
+Next steps:
+  cd py-agent
+  pip install -r requirements.txt
+  python main.py
+```
+
+## Generated Project Structure
+
+### Rust Projects (basic, llm, axum)
+
+```
+project-name/
+├── Cargo.toml          # Rust project manifest
+├── src/
+│   └── main.rs         # Main entry point
+├── .env.example        # Environment variable template
+├── .gitignore          # Git ignore rules (axum only)
+└── README.md           # Project documentation (axum only)
+```
+
+### Python Projects
+
+```
+project-name/
+├── main.py             # Main entry point
+├── requirements.txt    # Python dependencies
+├── agent.yml           # Agent configuration
+├── README.md           # Setup instructions
+└── .gitignore          # Git ignore rules
+```
+
+## Environment Variables
+
+All generated projects include `.env.example` with required variables:
+
+### Rust Projects
+
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=sk-your-api-key-here
+OPENAI_BASE_URL=
+OPENAI_MODEL=gpt-4o
+```
+
+### Axum Projects (additional)
+
+```bash
+# Service Configuration
+SERVICE_HOST=127.0.0.1
+SERVICE_PORT=3000
+
+# Agent Configuration
+AGENT_NAME=My LLM Agent
+AGENT_ID=my-llm-agent-001
+
+# Logging
+RUST_LOG=info,mofa=debug
+```
+
+### Python Projects
+
+```bash
+# Use agent.yml for configuration
+export OPENAI_API_KEY="sk-your-api-key-here"
+```
+
+## Post-Creation Steps
+
+### 1. Navigate to project
+
+```bash
+cd my-agent
+```
+
+### 2. Configure environment
+
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit with your API key
+export OPENAI_API_KEY="sk-your-actual-key"
+```
+
+### 3. Build and run
+
+<CodeGroup>
+
+```bash Rust Projects
+cargo run
+```
+
+```bash Python Projects
+pip install -r requirements.txt
+python main.py
+```
+
+</CodeGroup>
+
+### 4. Customize agent behavior
+
+Edit the generated code to customize:
+- System prompts
+- Temperature and token limits
+- Model selection
+- Tool integrations
+- Custom logic
+
+## Error Handling
+
+### Project already exists
+
+```bash
+mofa new my-agent
+# Error: Directory 'my-agent' already exists
+```
+
+**Solution:** Use a different name or remove the existing directory.
+
+### Invalid project name
+
+```bash
+mofa new "my agent"  # Contains space
+# Error: Invalid project name
+```
+
+**Solution:** Use alphanumeric characters, hyphens, and underscores only.
+
+### Template not found
+
+```bash
+mofa new my-agent --template invalid
+# Warning: Unknown template 'invalid', using 'basic'
+```
+
+Unknown templates fall back to `basic` template.
+
+## Tips
+
+<Tip>
+  **Template Selection:**
+  - Use `basic` for quick prototypes and learning
+  - Use `llm` for full-featured agent development
+  - Use `axum` for production HTTP services
+  - Use `python` for Python-based projects
+</Tip>
+
+<Tip>
+  **Naming Conventions:**
+  - Use lowercase with hyphens: `my-agent`
+  - Avoid spaces and special characters
+  - Choose descriptive names: `customer-support-bot`
+</Tip>
+
+<Tip>
+  **Output Directory:**
+  - Specify `--output` to organize projects
+  - Group related projects in subdirectories
+  - Use absolute paths for clarity
+</Tip>
+
+## See Also
+
+- [Installation](/installation) - Install MoFA CLI
+- [Quickstart](/quickstart) - Get started quickly
+- [Agent Management](/cli/agent) - Manage running agents
+- [Configuration](/cli/config) - Configure MoFA settings

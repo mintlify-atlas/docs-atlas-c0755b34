@@ -1,0 +1,239 @@
+---
+title: 'MoFAAgent Trait'
+description: 'Core agent interface that all MoFA agents must implement'
+icon: 'robot'
+---
+
+# MoFAAgent Trait
+
+The `MoFAAgent` trait is the unified core interface that all agents in the MoFA framework must implement. It provides the essential methods for agent lifecycle management, task execution, and state management.
+
+## Trait Definition
+
+```rust
+#[async_trait]
+pub trait MoFAAgent: Send + Sync + 'static {
+    // Identification
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn capabilities(&self) -> &AgentCapabilities;
+    
+    // Core lifecycle
+    async fn initialize(&mut self, ctx: &AgentContext) -> AgentResult<()>;
+    async fn execute(&mut self, input: AgentInput, ctx: &AgentContext) -> AgentResult<AgentOutput>;
+    async fn shutdown(&mut self) -> AgentResult<()>;
+    async fn interrupt(&mut self) -> AgentResult<InterruptResult>;
+    
+    // State query
+    fn state(&self) -> AgentState;
+}
+```
+
+Location: `mofa-kernel/src/agent/core.rs:129`
+
+## Required Methods
+
+### Identification Methods
+
+<ParamField path="id" type="fn(&self) -> &str" required>
+  Returns the unique identifier for this agent. The ID must remain constant throughout the agent's entire lifecycle and is used for:
+  - Agent registration and discovery
+  - Logging and monitoring
+  - Message routing between agents
+</ParamField>
+
+<ParamField path="name" type="fn(&self) -> &str" required>
+  Returns a human-readable name for display and logging. Unlike the ID, the name does not need to be unique.
+</ParamField>
+
+<ParamField path="capabilities" type="fn(&self) -> &AgentCapabilities" required>
+  Returns the agent's capability description, used for:
+  - Agent discovery and matching
+  - Task routing based on required capabilities
+  - Multi-agent coordination
+  
+  See [AgentCapabilities](/api/agent-capabilities) for details.
+</ParamField>
+
+### Core Lifecycle Methods
+
+<ParamField path="initialize" type="async fn(&mut self, ctx: &AgentContext) -> AgentResult<()>" required>
+  Initializes the agent before task execution. Called to:
+  - Load resources and configuration
+  - Establish connections (database, network, etc.)
+  - Initialize internal state
+  
+  **State Transition:** `Created → Initializing → Ready`
+  
+  **Parameters:**
+  - `ctx`: Execution context providing configuration, event bus, etc.
+</ParamField>
+
+<ParamField path="execute" type="async fn(&mut self, input: AgentInput, ctx: &AgentContext) -> AgentResult<AgentOutput>" required>
+  The primary execution method that processes input and returns output. This is the core method where the agent performs its work.
+  
+  **State Transition:** `Ready → Executing → Ready`
+  
+  **Parameters:**
+  - `input`: Input data supporting multiple formats (text, JSON, binary, etc.)
+  - `ctx`: Execution context providing state, events, interrupts
+  
+  **Returns:** Execution result containing output content, metadata, tool usage, etc.
+</ParamField>
+
+<ParamField path="shutdown" type="async fn(&mut self) -> AgentResult<()>" required>
+  Gracefully shuts down the agent, releasing resources:
+  - Save state
+  - Close connections
+  - Clean up resources
+  
+  **State Transition:** `* → ShuttingDown → Shutdown`
+</ParamField>
+
+<ParamField path="interrupt" type="async fn(&mut self) -> AgentResult<InterruptResult>" required>
+  Sends an interrupt signal to the agent. The agent can choose how to respond:
+  - Stop immediately
+  - Complete the current step then stop
+  - Ignore the interrupt
+  
+  **Default Implementation:** Returns `InterruptResult::Acknowledged`
+  
+  **State Transition:** `Executing → Interrupted`
+  
+  **Returns:** Interrupt handling result indicating how the agent responded
+</ParamField>
+
+### State Query Method
+
+<ParamField path="state" type="fn(&self) -> AgentState" required>
+  Returns the agent's current state, used for:
+  - Health checks
+  - Status monitoring
+  - State transition verification
+  
+  See [AgentState](/api/agent-input-output#agentstate) for available states.
+</ParamField>
+
+## Example Implementation
+
+```rust
+use mofa_sdk::kernel::{MoFAAgent, AgentInput, AgentOutput, AgentContext, AgentResult, AgentState, AgentCapabilities};
+use async_trait::async_trait;
+
+struct MyAgent {
+    id: String,
+    name: String,
+    capabilities: AgentCapabilities,
+    state: AgentState,
+}
+
+#[async_trait]
+impl MoFAAgent for MyAgent {
+    fn id(&self) -> &str { 
+        &self.id 
+    }
+    
+    fn name(&self) -> &str { 
+        &self.name 
+    }
+    
+    fn capabilities(&self) -> &AgentCapabilities { 
+        &self.capabilities 
+    }
+    
+    fn state(&self) -> AgentState { 
+        self.state.clone() 
+    }
+
+    async fn initialize(&mut self, _ctx: &AgentContext) -> AgentResult<()> {
+        self.state = AgentState::Ready;
+        Ok(())
+    }
+
+    async fn execute(
+        &mut self, 
+        input: AgentInput, 
+        _ctx: &AgentContext
+    ) -> AgentResult<AgentOutput> {
+        // Process input and return output
+        let response = format!("Processed: {}", input.to_text());
+        Ok(AgentOutput::text(response))
+    }
+
+    async fn shutdown(&mut self) -> AgentResult<()> {
+        self.state = AgentState::Shutdown;
+        Ok(())
+    }
+}
+```
+
+## Real-World Example
+
+From `examples/react_agent/src/main.rs`:
+
+```rust
+use mofa_sdk::react::{ReActAgent, ReActConfig, ReActTool};
+use mofa_sdk::llm::{OpenAIProvider, OpenAIConfig};
+
+// Create LLM provider
+let provider = OpenAIProvider::with_config(
+    OpenAIConfig::new(api_key)
+        .with_model("gpt-4o")
+);
+
+// Create ReAct agent configuration
+let config = ReActConfig::builder()
+    .max_iterations(10)
+    .verbose(true)
+    .build();
+
+// Build agent with tools
+let mut agent = ReActAgent::new("researcher", config, Arc::new(provider))
+    .with_tool(Arc::new(WebSearchTool))
+    .with_tool(Arc::new(CalculatorTool));
+
+// Initialize and execute
+agent.initialize(&context).await?;
+let output = agent.execute(AgentInput::text(query), &context).await?;
+println!("Result: {}", output.to_text());
+```
+
+## Architecture Design
+
+The `MoFAAgent` trait follows microkernel architecture principles:
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                    MoFAAgent (Unified Core Interface)                │
+│  • id(), name(), capabilities()                                     │
+│  • initialize(), execute(), shutdown()                              │
+│  • state()                                                          │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│AgentLifecycle│    │AgentMessaging│    │AgentPlugin   │
+│  (Optional)  │    │  (Optional)  │    │  Support     │
+│• pause()     │    │• handle_     │    │  (Optional)  │
+│• resume()    │    │  message()   │    │• register_   │
+│              │    │• handle_     │    │  plugin()    │
+│              │    │  event()     │    │• unregister  │
+└──────────────┘    └──────────────┘    │  _plugin()   │
+                                        └──────────────┘
+```
+
+## Extension Traits
+
+The core `MoFAAgent` trait can be extended with optional traits for additional functionality:
+
+- [**AgentLifecycle**](/api/agent-lifecycle) - Adds `pause()` and `resume()` methods
+- **AgentMessaging** - Adds message and event handling
+- **AgentPluginSupport** - Adds plugin registration and management
+
+## See Also
+
+- [AgentInput & AgentOutput](/api/agent-input-output) - Input and output types
+- [AgentContext](/api/agent-context) - Execution context
+- [AgentCapabilities](/api/agent-capabilities) - Capability discovery
+- [AgentLifecycle](/api/agent-lifecycle) - Lifecycle extension trait

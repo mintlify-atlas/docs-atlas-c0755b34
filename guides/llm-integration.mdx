@@ -1,0 +1,451 @@
+---
+title: LLM Integration
+description: Integrate multiple LLM providers including OpenAI, Anthropic, Ollama, and Gemini
+icon: brain
+---
+
+MoFA supports multiple LLM providers through a unified `LLMProvider` trait. This guide shows you how to integrate and configure different providers.
+
+## Supported Providers
+
+MoFA natively supports:
+
+- **OpenAI** (GPT-4, GPT-4 Turbo, GPT-3.5)
+- **Anthropic** (Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku)
+- **Ollama** (Local models: Llama 3, Mistral, etc.)
+- **Google Gemini** (Gemini Pro, Gemini Flash)
+- **Any OpenAI-compatible API** (vLLM, LocalAI, OpenRouter)
+
+## OpenAI Provider
+
+The most common provider for production use.
+
+### Basic Setup
+
+```rust
+use mofa_sdk::llm::{OpenAIProvider, OpenAIConfig, LLMClient};
+use std::sync::Arc;
+
+// Method 1: From environment variables
+let provider = OpenAIProvider::from_env();
+
+// Method 2: Direct configuration
+let provider = OpenAIProvider::new("sk-...");
+
+// Method 3: Advanced configuration
+let config = OpenAIConfig::new("sk-...")
+    .with_model("gpt-4o")
+    .with_temperature(0.7)
+    .with_max_tokens(4096);
+
+let provider = OpenAIProvider::with_config(config);
+let client = LLMClient::new(Arc::new(provider));
+```
+
+### Environment Variables
+
+```env .env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o           # optional, default: gpt-4o
+OPENAI_BASE_URL=https://api.openai.com  # optional
+```
+
+### Available Models
+
+| Model | Context Window | Best For |
+|-------|---------------|----------|
+| `gpt-4o` | 128K tokens | Most capable, vision support |
+| `gpt-4o-mini` | 128K tokens | Faster, cost-effective |
+| `gpt-4-turbo` | 128K tokens | High quality with vision |
+| `gpt-3.5-turbo` | 16K tokens | Fast and economical |
+
+### Usage Example
+
+```rust
+use mofa_sdk::llm::{OpenAIProvider, LLMClient};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = OpenAIProvider::from_env();
+    let client = LLMClient::new(Arc::new(provider));
+
+    // Simple Q&A
+    let response = client
+        .ask("What is Rust?")
+        .await?;
+
+    println!("Answer: {}", response);
+    Ok(())
+}
+```
+
+## Anthropic Provider
+
+Claude models excel at long-form reasoning and analysis.
+
+### Basic Setup
+
+```rust
+use mofa_sdk::llm::{AnthropicProvider, AnthropicConfig, LLMClient};
+use std::sync::Arc;
+
+// Method 1: From environment
+let provider = AnthropicProvider::from_env();
+
+// Method 2: Direct configuration
+let config = AnthropicConfig::new("sk-ant-...")
+    .with_model("claude-3.5-sonnet-20241022")
+    .with_temperature(0.7)
+    .with_max_tokens(4096);
+
+let provider = AnthropicProvider::with_config(config);
+let client = LLMClient::new(Arc::new(provider));
+```
+
+### Environment Variables
+
+```env .env
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-3.5-sonnet-20241022  # optional
+ANTHROPIC_BASE_URL=https://api.anthropic.com # optional
+```
+
+### Available Models
+
+| Model | Context Window | Best For |
+|-------|---------------|----------|
+| `claude-3.5-sonnet-20241022` | 200K tokens | Best overall performance |
+| `claude-3-opus-20240229` | 200K tokens | Complex reasoning tasks |
+| `claude-3-haiku-20240307` | 200K tokens | Fast, cost-effective |
+
+### Helper Function
+
+```rust
+use mofa_sdk::anthropic_from_env;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = anthropic_from_env()?;
+    let client = LLMClient::new(Arc::new(provider));
+
+    let response = client
+        .ask_with_system(
+            "You are a helpful assistant.",
+            "Explain async/await in Rust"
+        )
+        .await?;
+
+    println!("{}", response);
+    Ok(())
+}
+```
+
+## Ollama Provider
+
+Run models locally without API costs.
+
+### Prerequisites
+
+1. Install Ollama: https://ollama.ai
+2. Pull a model:
+
+```bash
+ollama pull llama3.2
+```
+
+### Basic Setup
+
+```rust
+use mofa_sdk::llm::{OllamaProvider, OllamaConfig, LLMClient};
+use std::sync::Arc;
+
+// Method 1: Default (localhost:11434)
+let provider = OllamaProvider::new();
+
+// Method 2: From environment
+let provider = OllamaProvider::from_env();
+
+// Method 3: Custom configuration
+let config = OllamaConfig::new()
+    .with_base_url("http://localhost:11434/v1")
+    .with_model("llama3.2")
+    .with_temperature(0.7);
+
+let provider = OllamaProvider::with_config(config);
+let client = LLMClient::new(Arc::new(provider));
+```
+
+### Environment Variables
+
+```env .env
+OLLAMA_BASE_URL=http://localhost:11434  # optional, default shown
+OLLAMA_MODEL=llama3.2                    # optional, default: llama3
+```
+
+### Popular Models
+
+| Model | Size | Best For |
+|-------|------|----------|
+| `llama3.2` | 3B/1B | Fast local inference |
+| `mistral` | 7B | General purpose |
+| `codellama` | 7B-34B | Code generation |
+| `qwen2.5` | 0.5B-72B | Multilingual tasks |
+
+### Helper Function
+
+```rust
+use mofa_sdk::llm::ollama_from_env;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = ollama_from_env()?;
+    let client = LLMClient::new(Arc::new(provider));
+
+    let response = client.ask("Hello, how are you?").await?;
+    println!("{}", response);
+    Ok(())
+}
+```
+
+## Google Gemini Provider
+
+Access Google's Gemini models.
+
+### Basic Setup
+
+```rust
+use mofa_sdk::llm::{GeminiProvider, GeminiConfig, LLMClient};
+use std::sync::Arc;
+
+// Method 1: From environment
+let provider = GeminiProvider::from_env();
+
+// Method 2: Direct configuration
+let config = GeminiConfig::new("your-api-key")
+    .with_model("gemini-1.5-pro-latest")
+    .with_temperature(0.7)
+    .with_max_tokens(2048);
+
+let provider = GeminiProvider::with_config(config);
+let client = LLMClient::new(Arc::new(provider));
+```
+
+### Environment Variables
+
+```env .env
+GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-1.5-pro-latest  # optional
+```
+
+### Available Models
+
+| Model | Context Window | Best For |
+|-------|---------------|----------|
+| `gemini-1.5-pro-latest` | 1M tokens | Long context tasks |
+| `gemini-1.5-flash-latest` | 1M tokens | Fast, cost-effective |
+
+### Helper Function
+
+```rust
+use mofa_sdk::gemini_from_env;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = gemini_from_env()?;
+    let client = LLMClient::new(Arc::new(provider));
+
+    let response = client.ask("What is quantum computing?").await?;
+    println!("{}", response);
+    Ok(())
+}
+```
+
+## OpenAI-Compatible Providers
+
+Use any OpenAI-compatible API (vLLM, LocalAI, OpenRouter).
+
+### vLLM Example
+
+```rust
+use mofa_sdk::llm::{OpenAIProvider, OpenAIConfig};
+
+let config = OpenAIConfig::new("not-needed")
+    .with_base_url("http://localhost:8000/v1")
+    .with_model("meta-llama/Llama-3.1-8B-Instruct");
+
+let provider = OpenAIProvider::with_config(config);
+```
+
+### OpenRouter Example
+
+```env .env
+OPENAI_API_KEY=your-openrouter-key
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_MODEL=google/gemini-2.0-flash-001
+```
+
+## Advanced LLM Client Usage
+
+### Streaming Responses
+
+```rust
+use tokio_stream::StreamExt;
+
+let mut stream = client.chat()
+    .system("You are a helpful assistant.")
+    .user("Tell me a story")
+    .send_stream()
+    .await?;
+
+while let Some(chunk) = stream.next().await {
+    if let Ok(text) = chunk {
+        print!("{}", text);
+    }
+}
+```
+
+### Multi-turn Conversation
+
+```rust
+let response1 = client.chat()
+    .user("My favorite language is Rust.")
+    .send()
+    .await?;
+
+let response2 = client.chat()
+    .assistant(response1.content().unwrap())
+    .user("What's my favorite language?")
+    .send()
+    .await?;
+
+println!("{}", response2.content().unwrap());
+```
+
+### Tool Calling
+
+```rust
+use mofa_sdk::llm::function_tool;
+use serde_json::json;
+
+let weather_tool = function_tool(
+    "get_weather",
+    "Get current weather for a location",
+    json!({
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "City name"
+            }
+        },
+        "required": ["location"]
+    })
+);
+
+let response = client.chat()
+    .system("You are a helpful assistant.")
+    .user("What's the weather in Paris?")
+    .tool(weather_tool)
+    .send()
+    .await?;
+
+if let Some(tool_calls) = response.tool_calls() {
+    for call in tool_calls {
+        println!("Tool: {}", call.function.name);
+        println!("Args: {}", call.function.arguments);
+    }
+}
+```
+
+### JSON Mode
+
+```rust
+let response = client.chat()
+    .system("You are a helpful assistant. Always respond in JSON.")
+    .user("List 3 programming languages")
+    .json_mode()
+    .send()
+    .await?;
+
+println!("{}", response.content().unwrap());
+// Output: {"languages": ["Rust", "Python", "JavaScript"]}
+```
+
+## Provider Comparison
+
+| Feature | OpenAI | Anthropic | Ollama | Gemini |
+|---------|--------|-----------|--------|--------|
+| Streaming | ✅ | ✅ | ✅ | ✅ |
+| Tools | ✅ | ✅ | ✅ | ⚠️ Limited |
+| Vision | ✅ | ✅ | ✅ | ✅ |
+| Cost | $$$ | $$$ | Free | $$ |
+| Privacy | Cloud | Cloud | Local | Cloud |
+| Max Context | 128K | 200K | Varies | 1M |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use environment variables for API keys">
+    Never hardcode API keys in your source code. Always use environment variables or a secure secret management system.
+    
+    ```rust
+    // ✅ Good
+    let provider = OpenAIProvider::from_env();
+    
+    // ❌ Bad
+    let provider = OpenAIProvider::new("sk-hardcoded-key");
+    ```
+  </Accordion>
+
+  <Accordion title="Handle errors gracefully">
+    LLM calls can fail for many reasons (network issues, rate limits, invalid requests). Always handle errors properly.
+    
+    ```rust
+    match client.ask("question").await {
+        Ok(response) => println!("{}", response),
+        Err(LLMError::RateLimited(msg)) => {
+            // Wait and retry
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+        Err(e) => eprintln!("Error: {}", e),
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Choose the right model for your use case">
+    - **GPT-4o**: Best for complex reasoning, vision tasks
+    - **GPT-4o-mini**: Fast, cost-effective for simple tasks
+    - **Claude 3.5 Sonnet**: Excellent for long-form content, analysis
+    - **Ollama**: Local inference, no API costs, privacy-focused
+    - **Gemini Flash**: Very long context windows (1M tokens)
+  </Accordion>
+
+  <Accordion title="Monitor token usage and costs">
+    Track token consumption to optimize costs:
+    
+    ```rust
+    let response = client.chat()
+        .user("question")
+        .send()
+        .await?;
+
+    if let Some(usage) = response.usage {
+        println!("Tokens: {}", usage.total_tokens);
+        println!("Prompt: {}", usage.prompt_tokens);
+        println!("Completion: {}", usage.completion_tokens);
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Lifecycle" icon="rotate" href="/guides/agent-lifecycle">
+    Learn about agent state management and lifecycle hooks
+  </Card>
+  <Card title="Capabilities & State" icon="sliders" href="/guides/capabilities-and-state">
+    Master agent capabilities and state patterns
+  </Card>
+</CardGroup>

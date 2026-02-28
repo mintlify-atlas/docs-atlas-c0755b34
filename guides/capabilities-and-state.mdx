@@ -1,0 +1,602 @@
+---
+title: Capabilities and State
+description: Master agent capabilities definition and state management patterns in MoFA
+icon: sliders
+---
+
+Learn how to define agent capabilities for discovery and routing, and implement robust state management patterns.
+
+## Agent Capabilities
+
+Capabilities describe what an agent can do. They're used for:
+- **Agent discovery**: Find agents that match requirements
+- **Task routing**: Direct tasks to capable agents
+- **Multi-agent coordination**: Match agents for collaboration
+
+### Capabilities Structure
+
+```rust
+pub struct AgentCapabilities {
+    pub tags: HashSet<String>,                    // Capability labels
+    pub input_types: HashSet<InputType>,          // Supported inputs
+    pub output_types: HashSet<OutputType>,        // Supported outputs
+    pub max_context_length: Option<usize>,        // Context window
+    pub reasoning_strategies: Vec<ReasoningStrategy>, // How it thinks
+    pub supports_streaming: bool,                 // Streaming support
+    pub supports_conversation: bool,              // Multi-turn chat
+    pub supports_tools: bool,                     // Tool calling
+    pub supports_coordination: bool,              // Multi-agent
+    pub custom: HashMap<String, serde_json::Value>, // Custom flags
+}
+```
+
+### Building Capabilities
+
+Use the builder pattern to define capabilities:
+
+```rust
+use mofa_sdk::kernel::agent::prelude::*;
+
+let capabilities = AgentCapabilities::builder()
+    // Tags for discovery
+    .tag("llm")
+    .tag("research")
+    .tag("coding")
+    
+    // Input/Output types
+    .input_type(InputType::Text)
+    .input_type(InputType::Json)
+    .output_type(OutputType::Text)
+    .output_type(OutputType::Json)
+    
+    // Reasoning strategy
+    .reasoning_strategy(ReasoningStrategy::ReAct {
+        max_iterations: 10
+    })
+    
+    // Feature flags
+    .supports_streaming(true)
+    .supports_conversation(true)
+    .supports_tools(true)
+    .supports_coordination(false)
+    
+    // Context window
+    .max_context_length(128000)
+    
+    // Custom metadata
+    .custom("version", serde_json::json!("1.0.0"))
+    .custom("model", serde_json::json!("gpt-4o"))
+    
+    .build();
+```
+
+### Input and Output Types
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InputType {
+    Text,           // Plain text
+    Json,           // JSON data
+    Binary,         // Binary data
+    Image,          // Image files
+    Audio,          // Audio files
+    Video,          // Video files
+    MultiModal,     // Mixed content
+    Stream,         // Streaming input
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum OutputType {
+    Text,           // Plain text
+    Json,           // JSON data
+    Binary,         // Binary data
+    Image,          // Image files
+    Audio,          // Audio files  
+    Video,          // Video files
+    Stream,         // Streaming output
+    ToolCalls,      // Tool invocations
+}
+```
+
+### Reasoning Strategies
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReasoningStrategy {
+    // Direct LLM inference
+    Direct,
+    
+    // ReAct: Thought-Action-Observation loop
+    ReAct { max_iterations: usize },
+    
+    // Chain of Thought
+    ChainOfThought,
+    
+    // Tree of Thought with branching
+    TreeOfThought { branching_factor: usize },
+    
+    // Custom strategy
+    Custom(String),
+}
+```
+
+## Capability Matching
+
+### Requirements Definition
+
+Define what you need from an agent:
+
+```rust
+let requirements = AgentRequirements::builder()
+    // Must have these tags
+    .require_tag("llm")
+    .require_tag("coding")
+    
+    // Nice to have
+    .prefer_tag("rust")
+    
+    // Input/output requirements
+    .input_type(InputType::Text)
+    .output_type(OutputType::Json)
+    
+    // Feature requirements
+    .requires_streaming(true)
+    .requires_tools(true)
+    .requires_conversation(false)
+    .requires_coordination(false)
+    
+    .build();
+
+// Check if agent matches
+if capabilities.matches(&requirements) {
+    println!("Agent is suitable!");
+}
+
+// Get match score (0.0 - 1.0)
+let score = capabilities.match_score(&requirements);
+println!("Match score: {:.2}", score);
+```
+
+### Practical Example
+
+```rust
+use mofa_sdk::kernel::agent::prelude::*;
+
+struct CodeReviewAgent {
+    capabilities: AgentCapabilities,
+    // ... other fields
+}
+
+impl CodeReviewAgent {
+    fn new() -> Self {
+        let capabilities = AgentCapabilities::builder()
+            .tag("code-review")
+            .tag("security")
+            .tag("rust")
+            .tag("python")
+            .input_type(InputType::Text)
+            .output_type(OutputType::Json)
+            .reasoning_strategy(ReasoningStrategy::ChainOfThought)
+            .supports_tools(true)
+            .max_context_length(100000)
+            .build();
+        
+        Self {
+            capabilities,
+            // ...
+        }
+    }
+}
+
+// Later, when routing tasks:
+let task_requirements = AgentRequirements::builder()
+    .require_tag("code-review")
+    .require_tag("rust")
+    .input_type(InputType::Text)
+    .output_type(OutputType::Json)
+    .build();
+
+let agent = CodeReviewAgent::new();
+if agent.capabilities.matches(&task_requirements) {
+    // Route task to this agent
+    println!("✓ Agent can handle code review");
+}
+```
+
+## State Management
+
+### Agent State
+
+MoFA provides a well-defined state machine:
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentState {
+    Created,      // Instance created
+    Initializing, // Loading resources
+    Ready,        // Ready for tasks
+    Executing,    // Processing a task
+    Paused,       // Temporarily suspended
+    Interrupted,  // Externally interrupted
+    ShuttingDown, // Cleaning up
+    Shutdown,     // Fully stopped
+    Failed,       // Error state
+}
+```
+
+### State Transitions
+
+Always update state at appropriate points:
+
+```rust
+#[async_trait]
+impl MoFAAgent for MyAgent {
+    async fn initialize(&mut self, ctx: &AgentContext) -> AgentResult<()> {
+        self.state = AgentState::Initializing;
+        
+        // Load resources...
+        
+        self.state = AgentState::Ready;
+        Ok(())
+    }
+    
+    async fn execute(
+        &mut self,
+        input: AgentInput,
+        ctx: &AgentContext
+    ) -> AgentResult<AgentOutput> {
+        self.state = AgentState::Executing;
+        
+        // Process task...
+        
+        self.state = AgentState::Ready;
+        Ok(output)
+    }
+    
+    async fn shutdown(&mut self) -> AgentResult<()> {
+        self.state = AgentState::ShuttingDown;
+        
+        // Cleanup...
+        
+        self.state = AgentState::Shutdown;
+        Ok(())
+    }
+}
+```
+
+### Internal State Management
+
+Beyond the lifecycle state, agents often need to track:
+
+- **Execution context**: Current task being processed
+- **Metrics**: Performance statistics
+- **Checkpoints**: Progress snapshots
+- **Configuration**: Runtime settings
+
+#### Example: Stateful Agent
+
+```rust
+use std::collections::HashMap;
+use mofa_sdk::kernel::agent::prelude::*;
+
+struct StatefulAgent {
+    // Identity
+    id: String,
+    name: String,
+    
+    // Lifecycle state
+    state: AgentState,
+    capabilities: AgentCapabilities,
+    
+    // Internal state
+    execution_count: u64,
+    total_tokens_used: u64,
+    conversation_history: Vec<String>,
+    checkpoints: HashMap<String, Vec<u8>>,
+    metadata: HashMap<String, String>,
+    
+    // Client
+    client: LLMClient,
+}
+
+impl StatefulAgent {
+    fn new(client: LLMClient) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "Stateful Agent".to_string(),
+            state: AgentState::Created,
+            capabilities: AgentCapabilities::builder()
+                .tag("stateful")
+                .supports_conversation(true)
+                .build(),
+            execution_count: 0,
+            total_tokens_used: 0,
+            conversation_history: Vec::new(),
+            checkpoints: HashMap::new(),
+            metadata: HashMap::new(),
+            client,
+        }
+    }
+    
+    // Save checkpoint
+    fn save_checkpoint(&mut self, name: &str) -> AgentResult<()> {
+        let checkpoint_data = serde_json::to_vec(&self.conversation_history)
+            .map_err(|e| AgentError::Other(e.to_string()))?;
+        
+        self.checkpoints.insert(name.to_string(), checkpoint_data);
+        Ok(())
+    }
+    
+    // Restore checkpoint
+    fn restore_checkpoint(&mut self, name: &str) -> AgentResult<()> {
+        let data = self.checkpoints.get(name)
+            .ok_or_else(|| AgentError::Other("Checkpoint not found".into()))?;
+        
+        self.conversation_history = serde_json::from_slice(data)
+            .map_err(|e| AgentError::Other(e.to_string()))?;
+        
+        Ok(())
+    }
+    
+    // Get metrics
+    fn get_metrics(&self) -> AgentStats {
+        AgentStats {
+            total_executions: self.execution_count,
+            successful_executions: self.execution_count, // simplified
+            failed_executions: 0,
+            avg_execution_time_ms: 0.0,
+            total_tokens_used: self.total_tokens_used,
+            total_tool_calls: 0,
+        }
+    }
+}
+
+#[async_trait]
+impl MoFAAgent for StatefulAgent {
+    fn id(&self) -> &str { &self.id }
+    fn name(&self) -> &str { &self.name }
+    fn capabilities(&self) -> &AgentCapabilities { &self.capabilities }
+    fn state(&self) -> AgentState { self.state.clone() }
+    
+    async fn initialize(&mut self, _ctx: &AgentContext) -> AgentResult<()> {
+        self.state = AgentState::Ready;
+        Ok(())
+    }
+    
+    async fn execute(
+        &mut self,
+        input: AgentInput,
+        _ctx: &AgentContext
+    ) -> AgentResult<AgentOutput> {
+        self.state = AgentState::Executing;
+        self.execution_count += 1;
+        
+        // Add to conversation history
+        let user_message = input.to_text();
+        self.conversation_history.push(format!("User: {}", user_message));
+        
+        // Save checkpoint before execution
+        self.save_checkpoint("pre_execution")?;
+        
+        // Call LLM
+        let response = self.client
+            .ask(&user_message)
+            .await
+            .map_err(|e| AgentError::ExecutionFailed(e.to_string()))?;
+        
+        // Track tokens (simplified)
+        self.total_tokens_used += response.len() as u64;
+        
+        // Add to history
+        self.conversation_history.push(format!("Assistant: {}", response));
+        
+        self.state = AgentState::Ready;
+        Ok(AgentOutput::text(response))
+    }
+    
+    async fn shutdown(&mut self) -> AgentResult<()> {
+        // Save final checkpoint
+        self.save_checkpoint("final")?;
+        
+        self.state = AgentState::Shutdown;
+        Ok(())
+    }
+}
+```
+
+### State Persistence
+
+For production agents, persist state to survive restarts:
+
+```rust
+use mofa_sdk::persistence::{SessionStore, MessageStore};
+
+impl StatefulAgent {
+    async fn save_to_db(
+        &self,
+        store: &dyn SessionStore
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let session = ChatSession::new(self.user_id, self.agent_id)
+            .with_id(self.session_id)
+            .with_metadata("state", serde_json::to_string(&self.state)?)
+            .with_metadata("execution_count", self.execution_count.to_string());
+        
+        store.create_session(&session).await?;
+        Ok(())
+    }
+    
+    async fn load_from_db(
+        &mut self,
+        store: &dyn SessionStore,
+        session_id: uuid::Uuid
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let session = store.get_session(session_id).await?
+            .ok_or("Session not found")?;
+        
+        if let Some(count) = session.metadata.get("execution_count") {
+            self.execution_count = count.parse()?;
+        }
+        
+        Ok(())
+    }
+}
+```
+
+## Advanced Patterns
+
+### Dynamic Capability Updates
+
+Update capabilities at runtime:
+
+```rust
+impl MyAgent {
+    fn update_capabilities(&mut self) {
+        // Add new tags
+        self.capabilities.tags.insert("feature-x".to_string());
+        
+        // Update context length
+        self.capabilities.max_context_length = Some(200000);
+        
+        // Enable new features
+        self.capabilities.supports_streaming = true;
+    }
+}
+```
+
+### Multi-Modal Capabilities
+
+```rust
+let vision_agent_caps = AgentCapabilities::builder()
+    .tag("vision")
+    .tag("image-analysis")
+    .input_type(InputType::Image)
+    .input_type(InputType::Text)
+    .output_type(OutputType::Text)
+    .output_type(OutputType::Json)
+    .custom("supported_formats", serde_json::json!(["png", "jpg", "webp"]))
+    .build();
+```
+
+### Capability Discovery
+
+```rust
+use mofa_sdk::runtime::AgentRegistry;
+
+async fn find_suitable_agent(
+    registry: &AgentRegistry,
+    requirements: &AgentRequirements
+) -> Option<String> {
+    let mut best_match = None;
+    let mut best_score = 0.0;
+    
+    for agent_id in registry.list_agents().await {
+        if let Some(agent) = registry.get_agent(&agent_id).await {
+            let caps = agent.capabilities();
+            
+            if caps.matches(requirements) {
+                let score = caps.match_score(requirements);
+                if score > best_score {
+                    best_score = score;
+                    best_match = Some(agent_id);
+                }
+            }
+        }
+    }
+    
+    best_match
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Be specific with capability tags">
+    Use descriptive, hierarchical tags for better matching.
+    
+    ```rust
+    // ✅ Good: Specific and hierarchical
+    .tag("nlp::sentiment-analysis")
+    .tag("nlp::entity-extraction")
+    .tag("domain::finance")
+    
+    // ❌ Bad: Too generic
+    .tag("ai")
+    .tag("smart")
+    ```
+  </Accordion>
+
+  <Accordion title="Track state transitions with events">
+    Emit events when state changes for observability.
+    
+    ```rust
+    async fn execute(&mut self, input: AgentInput, ctx: &AgentContext) -> AgentResult<AgentOutput> {
+        let old_state = self.state.clone();
+        self.state = AgentState::Executing;
+        
+        ctx.emit_event(AgentEvent::state_changed(
+            &self.id,
+            old_state,
+            self.state.clone()
+        ));
+        
+        // ... execute ...
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Validate state transitions">
+    Not all transitions are valid. Enforce constraints.
+    
+    ```rust
+    fn transition_to(&mut self, new_state: AgentState) -> AgentResult<()> {
+        let valid = match (&self.state, &new_state) {
+            (AgentState::Created, AgentState::Initializing) => true,
+            (AgentState::Ready, AgentState::Executing) => true,
+            (AgentState::Executing, AgentState::Ready) => true,
+            (AgentState::Executing, AgentState::Paused) => true,
+            _ => false,
+        };
+        
+        if !valid {
+            return Err(AgentError::InvalidStateTransition(
+                format!("{:?} -> {:?}", self.state, new_state)
+            ));
+        }
+        
+        self.state = new_state;
+        Ok(())
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Persist critical state">
+    Save important state to survive crashes.
+    
+    ```rust
+    async fn execute(&mut self, input: AgentInput, ctx: &AgentContext) -> AgentResult<AgentOutput> {
+        // Save checkpoint before risky operation
+        self.save_checkpoint("pre_execution").await?;
+        
+        match self.risky_operation().await {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // Restore from checkpoint
+                self.restore_checkpoint("pre_execution").await?;
+                Err(e)
+            }
+        }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Explore the complete capabilities and state API
+  </Card>
+  <Card title="Examples" icon="code" href="https://github.com/mofa-org/mofa/tree/main/examples">
+    See real-world examples in the repository
+  </Card>
+</CardGroup>

@@ -1,0 +1,599 @@
+---
+title: "mofa config"
+description: "Manage global configuration settings"
+icon: "gear"
+---
+
+The `mofa config` command provides global configuration management including viewing, setting, and validating configuration values.
+
+## Subcommands
+
+<CardGroup cols={2}>
+
+<Card title="value" icon="key">
+  Get, set, or unset configuration values
+</Card>
+
+<Card title="list" icon="list">
+  List all configuration values
+</Card>
+
+<Card title="validate" icon="check">
+  Validate configuration file
+</Card>
+
+<Card title="path" icon="folder">
+  Show configuration directory path
+</Card>
+
+</CardGroup>
+
+## mofa config value
+
+Manage individual configuration values.
+
+### Subcommands
+
+#### `get`
+
+Get a configuration value.
+
+```bash
+mofa config value get <KEY>
+```
+
+**Examples:**
+
+```bash
+# Get API key
+mofa config value get openai.api_key
+
+# Get default model
+mofa config value get llm.model
+```
+
+**Output:**
+
+```
+gpt-4o
+```
+
+#### `set`
+
+Set a configuration value.
+
+```bash
+mofa config value set <KEY> <VALUE>
+```
+
+**Examples:**
+
+```bash
+# Set default model
+mofa config value set llm.model gpt-4o-mini
+```
+
+**Output:**
+
+```
+→ Setting config: llm.model = gpt-4o-mini
+✓ Config saved successfully
+```
+
+#### `unset`
+
+Remove a configuration value.
+
+```bash
+mofa config value unset <KEY>
+```
+
+**Examples:**
+
+```bash
+# Remove custom setting
+mofa config value unset llm.temperature
+```
+
+**Output:**
+
+```
+→ Unsetting config: llm.temperature
+✓ Config unset successfully
+```
+
+---
+
+## mofa config list
+
+List all global configuration values.
+
+### Usage
+
+```bash
+mofa config list
+```
+
+### Examples
+
+```bash
+mofa config list
+```
+
+**Output:**
+
+```
+→ Global configuration
+
+  llm.model            = gpt-4o
+  llm.temperature      = 0.7
+  llm.max_tokens       = 4096
+  database.type        = sqlite
+  database.path        = ~/.local/share/mofa/mofa.db
+  log.level            = info
+  plugin.auto_update   = false
+```
+
+### Empty Configuration
+
+```bash
+mofa config list
+```
+
+**Output:**
+
+```
+→ Global configuration
+
+  No configuration values set.
+```
+
+---
+
+## mofa config validate
+
+Validate an agent configuration file.
+
+### Usage
+
+```bash
+mofa config validate [PATH]
+```
+
+### Arguments
+
+#### `[PATH]`
+
+**Optional.** Path to configuration file. If omitted, auto-discovers config file.
+
+```bash
+# Validate specific file
+mofa config validate agent.yml
+
+# Auto-discover and validate
+mofa config validate
+```
+
+### Examples
+
+#### Valid configuration
+
+```bash
+mofa config validate agent.yml
+```
+
+**Output:**
+
+```
+→ Validating configuration
+  Config file: agent.yml
+✓ Configuration is valid
+```
+
+#### Invalid configuration
+
+```bash
+mofa config validate broken.yml
+```
+
+**Output:**
+
+```
+→ Validating configuration
+  Config file: broken.yml
+✗ Configuration validation failed: Missing required 'agent.id' field
+```
+
+**Exit code:** `1`
+
+### Validation Rules
+
+The validator checks:
+
+1. **File Format**
+   - Valid YAML/TOML/JSON syntax
+   - Proper encoding
+
+2. **Required Fields**
+   - `agent` section exists
+   - `agent.id` is present
+   - `agent.name` is present
+
+3. **Field Types**
+   - Numeric fields are valid numbers
+   - Boolean fields are valid booleans
+   - Enums have valid values
+
+4. **Environment Variables**
+   - Validates `${VAR}` syntax
+   - Checks if referenced variables exist
+
+### Supported Formats
+
+- **YAML** (`.yml`, `.yaml`) - Recommended
+- **TOML** (`.toml`)
+- **JSON** (`.json`, `.json5`)
+- **INI** (`.ini`) - Limited validation
+- **RON** (`.ron`) - Limited validation
+
+---
+
+## mofa config path
+
+Show the global configuration directory path.
+
+### Usage
+
+```bash
+mofa config path
+```
+
+### Examples
+
+```bash
+mofa config path
+```
+
+**Output:**
+
+```
+/home/user/.config/mofa
+```
+
+### Directory Structure
+
+The configuration directory contains:
+
+```
+~/.config/mofa/
+  ├── config.yml          # Global configuration
+  ├── plugins/            # Plugin configurations
+  │   ├── web-search.yml
+  │   └── code-exec.yml
+  └── repositories.yml    # Plugin repository list
+```
+
+---
+
+## Configuration File
+
+### Global Configuration (`~/.config/mofa/config.yml`)
+
+```yaml
+# LLM Settings
+llm:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.7
+  max_tokens: 4096
+  api_key: ${OPENAI_API_KEY}
+  base_url: https://api.openai.com/v1
+
+# Database Settings
+database:
+  type: sqlite
+  path: ~/.local/share/mofa/mofa.db
+  # For PostgreSQL:
+  # type: postgres
+  # url: postgresql://user:pass@localhost/mofa
+
+# Logging
+log:
+  level: info
+  format: text
+  output: stderr
+
+# Plugin Settings
+plugin:
+  auto_update: false
+  check_signatures: true
+  install_dir: ~/.local/share/mofa/plugins
+
+# Runtime Settings
+runtime:
+  max_concurrent_agents: 10
+  default_timeout_secs: 60
+  enable_telemetry: false
+```
+
+### Agent Configuration (`agent.yml`)
+
+```yaml
+# Agent Identity
+agent:
+  id: my-agent-001
+  name: My Agent
+  description: A helpful AI assistant
+  version: 1.0.0
+  capabilities:
+    - llm
+    - tools
+    - memory
+
+# LLM Configuration
+llm:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.7
+  max_tokens: 4096
+  api_key: ${OPENAI_API_KEY}
+  
+  # System prompt
+  system_prompt: |
+    You are a helpful AI assistant.
+    Be concise, accurate, and friendly.
+
+# Tools Configuration
+tools:
+  enabled:
+    - web-search
+    - code-exec
+  
+  web-search:
+    search_engine: google
+    max_results: 10
+  
+  code-exec:
+    timeout: 30
+    allowed_languages:
+      - python
+      - javascript
+
+# Memory Configuration
+memory:
+  type: redis
+  redis:
+    url: redis://localhost:6379
+    db: 0
+    key_prefix: mofa:agent:my-agent
+
+# Runtime Configuration
+runtime:
+  max_concurrent_tasks: 5
+  default_timeout_secs: 30
+  retry_attempts: 3
+  retry_delay_ms: 1000
+```
+
+## Configuration Keys
+
+### LLM Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `llm.provider` | string | `openai` | LLM provider (openai, ollama, azure) |
+| `llm.model` | string | `gpt-4o` | Model identifier |
+| `llm.temperature` | float | `0.7` | Sampling temperature (0.0-2.0) |
+| `llm.max_tokens` | integer | `4096` | Maximum response tokens |
+| `llm.api_key` | string | - | API key (use `${ENV_VAR}`) |
+| `llm.base_url` | string | - | Custom API endpoint |
+
+### Database Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `database.type` | string | `sqlite` | Database type (sqlite, postgres, mysql) |
+| `database.path` | string | `~/.local/share/mofa/mofa.db` | SQLite database path |
+| `database.url` | string | - | Database connection URL |
+
+### Logging Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `log.level` | string | `info` | Log level (debug, info, warn, error) |
+| `log.format` | string | `text` | Log format (text, json) |
+| `log.output` | string | `stderr` | Log output (stdout, stderr, file) |
+
+### Plugin Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `plugin.auto_update` | boolean | `false` | Auto-update plugins |
+| `plugin.check_signatures` | boolean | `true` | Verify plugin signatures |
+| `plugin.install_dir` | string | `~/.local/share/mofa/plugins` | Plugin installation directory |
+
+## Environment Variables
+
+Configuration files support environment variable substitution:
+
+### Syntax
+
+```yaml
+# ${VAR} syntax
+api_key: ${OPENAI_API_KEY}
+
+# ${VAR:-default} with default
+model: ${OPENAI_MODEL:-gpt-4o}
+
+# $VAR short syntax
+base_url: $OPENAI_BASE_URL
+```
+
+### Common Variables
+
+```bash
+# OpenAI
+export OPENAI_API_KEY="sk-..."
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="gpt-4o"
+
+# MoFA
+export MOFA_CONFIG_DIR="~/.config/mofa"
+export MOFA_DATA_DIR="~/.local/share/mofa"
+
+# Database
+export DATABASE_URL="postgresql://user:pass@localhost/mofa"
+
+# Logging
+export RUST_LOG="info,mofa=debug"
+```
+
+## Configuration Precedence
+
+Configuration values are resolved in the following order (highest to lowest priority):
+
+1. Command-line flags (`--config`, `--verbose`, etc.)
+2. Environment variables
+3. Agent configuration file (`agent.yml`)
+4. Global configuration file (`~/.config/mofa/config.yml`)
+5. Built-in defaults
+
+### Example
+
+```bash
+# Global config sets model to gpt-4o
+# Agent config sets model to gpt-3.5-turbo
+# Environment variable sets model to gpt-4o-mini
+export OPENAI_MODEL="gpt-4o-mini"
+
+# Result: Uses gpt-4o-mini (environment variable wins)
+mofa agent start my-agent
+```
+
+## Common Workflows
+
+### Initial Setup
+
+```bash
+# Set API key
+mofa config value set openai.api_key "sk-..."
+
+# Set default model
+mofa config value set llm.model gpt-4o
+
+# Set temperature
+mofa config value set llm.temperature 0.7
+
+# Verify settings
+mofa config list
+```
+
+### Validate Configuration
+
+```bash
+# Validate current config
+mofa config validate
+
+# Validate specific file
+mofa config validate production.yml
+
+# Fix errors and re-validate
+vim agent.yml
+mofa config validate agent.yml
+```
+
+### Manage Settings
+
+```bash
+# View all settings
+mofa config list
+
+# Get specific value
+mofa config value get llm.model
+
+# Update value
+mofa config value set llm.model gpt-4o-mini
+
+# Remove value
+mofa config value unset llm.temperature
+```
+
+### Backup Configuration
+
+```bash
+# Find config directory
+CONFIG_DIR=$(mofa config path)
+
+# Backup configuration
+tar -czf mofa-config-backup.tar.gz "$CONFIG_DIR"
+
+# Restore configuration
+tar -xzf mofa-config-backup.tar.gz -C ~/
+```
+
+## Tips
+
+<Tip>
+  **Environment Variables:** Use `${VAR}` syntax in config files to keep secrets out of version control.
+</Tip>
+
+<Tip>
+  **Validation:** Run `mofa config validate` before starting agents to catch configuration errors early.
+</Tip>
+
+<Tip>
+  **Organization:** Use separate config files for different environments (dev, staging, production).
+</Tip>
+
+<Tip>
+  **Defaults:** Set sensible defaults in global config, override in agent configs as needed.
+</Tip>
+
+## Troubleshooting
+
+### Configuration not found
+
+```bash
+mofa config validate
+# Error: No config file found
+```
+
+**Solution:** Create `agent.yml` in current directory or specify path:
+
+```bash
+mofa config validate /path/to/agent.yml
+```
+
+### Invalid YAML syntax
+
+```bash
+mofa config validate agent.yml
+# Error: YAML parsing error: ...
+```
+
+**Solution:** Check YAML syntax, ensure proper indentation:
+
+```bash
+# Use a YAML linter
+yamllint agent.yml
+```
+
+### Environment variable not found
+
+```bash
+mofa config validate agent.yml
+# Warning: Environment variable 'OPENAI_API_KEY' not set
+```
+
+**Solution:** Set the environment variable:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+mofa config validate agent.yml
+```
+
+## See Also
+
+- [Agent Configuration](/cli/agent) - Manage agents
+- [Installation](/installation) - Set up MoFA
+- [Environment Variables](/cli/overview#environment-variables) - Configuration reference

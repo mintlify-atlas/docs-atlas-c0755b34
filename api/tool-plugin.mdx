@@ -1,0 +1,297 @@
+---
+title: 'ToolPlugin API'
+description: 'Plugin adapter for registering Tool implementations as plugins'
+---
+
+The `ToolPluginAdapter` converts any `Tool` implementation into an `AgentPlugin`, enabling centralized management through the plugin system.
+
+## Overview
+
+Tools in MoFA are standalone components that can be registered as plugins. The `ToolPluginAdapter` bridges the `Tool` trait and `AgentPlugin` trait, allowing tools to participate in the full plugin lifecycle.
+
+## Creating a Tool Plugin
+
+```rust
+use mofa_plugins::tool::adapter::ToolPluginAdapter;
+use mofa_kernel::agent::components::tool::Tool;
+use std::sync::Arc;
+
+let tool = Arc::new(MyTool::new());
+let plugin = ToolPluginAdapter::new(tool);
+
+// Register with plugin manager
+plugin_manager.register(Box::new(plugin)).await?;
+```
+
+## Tool Trait
+
+First, implement the `Tool` trait:
+
+```rust
+use mofa_kernel::agent::components::tool::{Tool, ToolInput, ToolResult};
+
+struct Calculator;
+
+#[async_trait]
+impl Tool for Calculator {
+    fn name(&self) -> &str {
+        "calculator"
+    }
+
+    fn description(&self) -> &str {
+        "Perform arithmetic operations"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": ["add", "sub", "mul", "div"]
+                },
+                "a": { "type": "number" },
+                "b": { "type": "number" }
+            },
+            "required": ["operation", "a", "b"]
+        })
+    }
+
+    async fn execute(
+        &self,
+        input: ToolInput,
+        ctx: &AgentContext,
+    ) -> ToolResult {
+        let op = input.get_str("operation").unwrap();
+        let a = input.get_number("a").unwrap();
+        let b = input.get_number("b").unwrap();
+
+        let result = match op {
+            "add" => a + b,
+            "sub" => a - b,
+            "mul" => a * b,
+            "div" => a / b,
+            _ => return ToolResult::failure("Unknown operation"),
+        };
+
+        ToolResult::success(serde_json::json!(result))
+    }
+}
+```
+
+## Adapter API
+
+### ToolPluginAdapter::new
+
+Create a new adapter from a Tool.
+
+<ParamField path="tool" type="Arc<dyn Tool>">
+  The tool implementation to adapt
+</ParamField>
+
+```rust
+let adapter = ToolPluginAdapter::new(Arc::new(Calculator));
+```
+
+### call_count
+
+Get the number of times the tool has been executed.
+
+```rust
+let count = adapter.call_count();
+println!("Tool executed {} times", count);
+```
+
+### tool
+
+Get a reference to the underlying tool.
+
+```rust
+let tool_ref = adapter.tool();
+```
+
+## Plugin Lifecycle
+
+The adapter implements the complete `AgentPlugin` lifecycle:
+
+### load
+
+```rust
+async fn load(&mut self, _ctx: &PluginContext) -> PluginResult<()> {
+    self.state = PluginState::Loaded;
+    Ok(())
+}
+```
+
+### execute
+
+Executes the tool with JSON input.
+
+<ParamField path="input" type="String">
+  JSON string containing ToolInput with arguments field
+</ParamField>
+
+```rust
+async fn execute(&mut self, input: String) -> PluginResult<String> {
+    // Parse input as ToolInput
+    let tool_input: ToolInput = serde_json::from_str(&input)?;
+    
+    // Execute the tool
+    let ctx = AgentContext::new("tool-execution");
+    let result = self.tool.execute(tool_input, &ctx).await;
+    
+    self.call_count += 1;
+    
+    // Return result as string
+    Ok(result.to_string_output())
+}
+```
+
+## Convenience Function
+
+Use the `adapt_tool` function for quick adaptation:
+
+```rust
+use mofa_plugins::tool::adapt_tool;
+
+let plugin = adapt_tool(Arc::new(MyTool::new()));
+```
+
+## Complete Example
+
+```rust
+use mofa_kernel::agent::components::tool::{Tool, ToolInput, ToolResult};
+use mofa_plugins::tool::ToolPluginAdapter;
+use std::sync::Arc;
+
+// 1. Define a tool
+struct WeatherTool {
+    api_key: String,
+}
+
+#[async_trait]
+impl Tool for WeatherTool {
+    fn name(&self) -> &str {
+        "get_weather"
+    }
+
+    fn description(&self) -> &str {
+        "Get current weather for a location"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City name or coordinates"
+                }
+            },
+            "required": ["location"]
+        })
+    }
+
+    async fn execute(
+        &self,
+        input: ToolInput,
+        _ctx: &AgentContext,
+    ) -> ToolResult {
+        let location = input.get_str("location")
+            .ok_or("Missing location")?;
+
+        // Call weather API (simplified)
+        let weather_data = fetch_weather(location, &self.api_key).await?;
+
+        ToolResult::success(serde_json::json!({
+            "location": location,
+            "temperature": weather_data.temp,
+            "conditions": weather_data.conditions
+        }))
+    }
+
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata::new()
+            .with_category("utility")
+            .with_tag("weather")
+            .needs_network()
+    }
+}
+
+// 2. Create plugin adapter
+let weather_tool = Arc::new(WeatherTool {
+    api_key: "your-api-key".to_string(),
+});
+
+let plugin = ToolPluginAdapter::new(weather_tool);
+
+// 3. Register with agent
+let agent = AgentBuilder::new("weather-agent", "Weather Assistant")
+    .with_plugin(Box::new(plugin))
+    .build_and_start(my_agent)
+    .await?;
+
+// 4. Execute tool via plugin
+let input = serde_json::json!({
+    "arguments": {
+        "location": "Tokyo"
+    }
+});
+
+let result = agent.execute_plugin(
+    "tool-get_weather",
+    serde_json::to_string(&input)?
+).await?;
+
+println!("Weather result: {}", result);
+```
+
+## Input Format
+
+The plugin expects input in the following JSON format:
+
+```json
+{
+  "arguments": {
+    "param1": "value1",
+    "param2": "value2"
+  },
+  "raw_input": "optional raw string"
+}
+```
+
+## Output Format
+
+The plugin returns the tool result as a string:
+
+```json
+{
+  "success": true,
+  "output": { /* tool output */ },
+  "error": null,
+  "metadata": {}
+}
+```
+
+Or for text output:
+
+```
+"Tool output as plain text"
+```
+
+## Statistics
+
+The adapter tracks execution statistics:
+
+```rust
+let stats = plugin.stats();
+// Returns HashMap with:
+// - "call_count": number of executions
+// - "state": current plugin state
+```
+
+## Related
+
+- [AgentPlugin Trait](/api/plugin-trait) - Base plugin interface
+- [Tool Component](/core-concepts/components#tool) - Tool trait documentation
+- [LLMPlugin](/api/llm-plugin) - LLM plugin adapter

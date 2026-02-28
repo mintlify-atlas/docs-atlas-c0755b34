@@ -1,0 +1,414 @@
+---
+title: 'Request-Response Pattern'
+description: 'One-to-one deterministic task execution with synchronous replies'
+---
+
+# Request-Response Pattern
+
+The Request-Response pattern provides **one-to-one synchronous communication** between agents. It's ideal for deterministic tasks that require a clear request and an explicit response.
+
+## Overview
+
+This pattern implements a classic request-response communication model:
+
+1. **Sender agent** sends a request message
+2. **Receiver agent** processes the request
+3. **Receiver agent** returns a response
+4. **Sender agent** receives and processes the response
+
+<Note>
+The Request-Response protocol supports **optional LLM integration** for intelligent message processing.
+</Note>
+
+## When to Use
+
+<CardGroup cols={2}>
+  <Card title="Data Processing" icon="database">
+    Query and transform data with guaranteed results
+  </Card>
+  
+  <Card title="Simple Q&A" icon="question">
+    Ask questions and receive direct answers
+  </Card>
+  
+  <Card title="Status Retrieval" icon="chart-line">
+    Check agent or system status synchronously
+  </Card>
+  
+  <Card title="Deterministic Tasks" icon="check-circle">
+    Execute tasks with predictable outcomes
+  </Card>
+</CardGroup>
+
+## Basic Usage
+
+### Without LLM (Fast Path)
+
+```rust
+use mofa_sdk::collaboration::{
+    RequestResponseProtocol,
+    CollaborationMessage,
+    CollaborationMode
+};
+use std::sync::Arc;
+
+// Create protocol without LLM
+let protocol = Arc::new(RequestResponseProtocol::new("agent_001"));
+
+// Create request message
+let msg = CollaborationMessage::new(
+    "agent_001".to_string(),
+    "Process data: [1, 2, 3, 4, 5]",
+    CollaborationMode::RequestResponse
+).with_receiver("agent_002".to_string());
+
+// Send message
+protocol.send_message(msg).await?;
+
+// Receive response
+if let Some(response) = protocol.receive_message().await? {
+    let result = protocol.process_message(response).await?;
+    println!("Success: {}", result.success);
+    println!("Duration: {}ms", result.duration_ms);
+}
+```
+
+### With LLM (Intelligent Path)
+
+```rust
+use mofa_sdk::collaboration::RequestResponseProtocol;
+use mofa_sdk::llm::{LLMClient, openai_from_env};
+use std::sync::Arc;
+
+// Create LLM client
+let provider = openai_from_env()?;
+let llm_client = Arc::new(LLMClient::new(Arc::new(provider)));
+
+// Create LLM-enabled protocol
+let protocol = Arc::new(RequestResponseProtocol::with_llm(
+    "agent_001",
+    llm_client.clone()
+));
+
+// Messages are now processed with LLM understanding
+let msg = CollaborationMessage::new(
+    "agent_001".to_string(),
+    "Analyze customer sentiment from recent reviews",
+    CollaborationMode::RequestResponse
+).with_receiver("analyst_agent".to_string());
+
+protocol.send_message(msg).await?;
+```
+
+## Using the Collaboration Manager
+
+The `LLMDrivenCollaborationManager` provides a higher-level API:
+
+```rust
+use mofa_sdk::collaboration::{
+    LLMDrivenCollaborationManager,
+    RequestResponseProtocol
+};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create manager
+    let manager = LLMDrivenCollaborationManager::new("agent_001");
+    
+    // Register request-response protocol
+    manager.register_protocol(Arc::new(
+        RequestResponseProtocol::new("agent_001")
+    )).await?;
+    
+    // Execute task using the protocol
+    let result = manager.execute_task_with_protocol(
+        "request_response",
+        "Calculate the sum of [10, 20, 30, 40]"
+    ).await?;
+    
+    if result.success {
+        if let Some(data) = result.data {
+            println!("Response: {}", data.to_text());
+        }
+    }
+    
+    // Check statistics
+    let stats = manager.stats().await;
+    println!("Total tasks: {}", stats.total_tasks);
+    println!("Success rate: {:.2}%", 
+        (stats.successful_tasks as f64 / stats.total_tasks as f64) * 100.0
+    );
+    
+    Ok(())
+}
+```
+
+## Advanced Examples
+
+### Code Analysis Request
+
+```rust
+use mofa_sdk::collaboration::{
+    LLMDrivenCollaborationManager,
+    RequestResponseProtocol,
+    CollaborationContent
+};
+use mofa_sdk::llm::{LLMClient, openai_from_env};
+use std::sync::Arc;
+
+async fn analyze_code() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = openai_from_env()?;
+    let llm_client = Arc::new(LLMClient::new(Arc::new(provider)));
+    
+    let manager = LLMDrivenCollaborationManager::new("analyzer");
+    
+    // Register LLM-enabled protocol
+    manager.register_protocol(Arc::new(
+        RequestResponseProtocol::with_llm(
+            "analyzer",
+            llm_client.clone()
+        )
+    )).await?;
+    
+    let code_snippet = r#"
+fn process_data(input: &str) -> String {
+    let mut result = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii() {
+            result.push(ch.to_ascii_uppercase());
+        }
+    }
+    result
+}
+"#;
+    
+    let result = manager.execute_task_with_protocol(
+        "request_response",
+        CollaborationContent::Mixed {
+            text: "Analyze this Rust code for security vulnerabilities and performance issues".to_string(),
+            data: serde_json::json!({
+                "code": code_snippet,
+                "language": "rust"
+            })
+        }
+    ).await?;
+    
+    if let Some(data) = result.data {
+        println!("Analysis result: {}", data.to_text());
+    }
+    
+    Ok(())
+}
+```
+
+### Data Transformation Pipeline
+
+<Tabs>
+  <Tab title="Rust">
+    ```rust
+    use mofa_sdk::collaboration::{
+        RequestResponseProtocol,
+        CollaborationMessage,
+        CollaborationContent,
+        CollaborationMode
+    };
+    use std::sync::Arc;
+    
+    async fn transform_data() -> Result<(), Box<dyn std::error::Error>> {
+        let protocol = Arc::new(RequestResponseProtocol::new("transformer"));
+        
+        // Step 1: Extract data
+        let extract_msg = CollaborationMessage::new(
+            "transformer".to_string(),
+            CollaborationContent::Data(serde_json::json!({
+                "action": "extract",
+                "source": "database",
+                "query": "SELECT * FROM users WHERE active = true"
+            })),
+            CollaborationMode::RequestResponse
+        ).with_receiver("data_agent".to_string());
+        
+        protocol.send_message(extract_msg).await?;
+        let extract_result = protocol.receive_message().await?;
+        
+        // Step 2: Transform data
+        if let Some(msg) = extract_result {
+            let result = protocol.process_message(msg).await?;
+            println!("Extraction completed in {}ms", result.duration_ms);
+        }
+        
+        Ok(())
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Protocol Info">
+    ```rust
+    // Get protocol information
+    let protocol = RequestResponseProtocol::new("agent_001");
+    
+    println!("Protocol: {}", protocol.name());
+    println!("Description: {}", protocol.description());
+    println!("Scenarios: {:?}", protocol.applicable_scenarios());
+    println!("Available: {}", protocol.is_available());
+    
+    // Get statistics
+    let stats = protocol.stats();
+    for (key, value) in stats {
+        println!("{}: {:?}", key, value);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Message Types
+
+The protocol supports multiple content types:
+
+### Text Messages
+
+```rust
+let msg = CollaborationMessage::new(
+    "sender",
+    "Simple text request",
+    CollaborationMode::RequestResponse
+);
+```
+
+### Structured Data
+
+```rust
+let msg = CollaborationMessage::new(
+    "sender",
+    CollaborationContent::Data(serde_json::json!({
+        "action": "query",
+        "params": {
+            "table": "users",
+            "limit": 100
+        }
+    })),
+    CollaborationMode::RequestResponse
+);
+```
+
+### Mixed Content
+
+```rust
+let msg = CollaborationMessage::new(
+    "sender",
+    CollaborationContent::Mixed {
+        text: "Process this dataset".to_string(),
+        data: serde_json::json!({
+            "dataset_id": "ds_001",
+            "filters": ["active", "verified"]
+        })
+    },
+    CollaborationMode::RequestResponse
+);
+```
+
+## Error Handling
+
+```rust
+use mofa_sdk::collaboration::{
+    LLMDrivenCollaborationManager,
+    CollaborationResult
+};
+
+async fn handle_errors() -> Result<(), Box<dyn std::error::Error>> {
+    let manager = LLMDrivenCollaborationManager::new("agent_001");
+    
+    let result = manager.execute_task_with_protocol(
+        "request_response",
+        "Risky operation"
+    ).await?;
+    
+    match result.success {
+        true => {
+            println!("Task succeeded");
+            if let Some(data) = result.data {
+                println!("Result: {}", data.to_text());
+            }
+        }
+        false => {
+            if let Some(error) = result.error {
+                eprintln!("Task failed: {}", error);
+            }
+        }
+    }
+    
+    Ok(())
+}
+```
+
+## Protocol Configuration
+
+The Request-Response protocol has minimal configuration:
+
+```rust
+use mofa_sdk::collaboration::RequestResponseProtocol;
+
+// Basic configuration
+let protocol = RequestResponseProtocol::new("agent_id");
+
+// With LLM support
+let protocol = RequestResponseProtocol::with_llm(
+    "agent_id",
+    llm_client
+);
+
+// Check protocol properties
+assert_eq!(protocol.name(), "request_response");
+assert_eq!(protocol.mode(), CollaborationMode::RequestResponse);
+assert!(protocol.is_available());
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use for Synchronous Operations">
+    Request-Response is best for operations that need immediate responses. For asynchronous workflows, consider Publish-Subscribe.
+  </Step>
+  
+  <Step title="Enable LLM for Complex Requests">
+    Use LLM integration when dealing with natural language queries or complex decision-making.
+  </Step>
+  
+  <Step title="Handle Timeouts Gracefully">
+    Implement timeout handling to prevent blocking indefinitely:
+    
+    ```rust
+    use tokio::time::{timeout, Duration};
+    
+    let result = timeout(
+        Duration::from_secs(30),
+        protocol.receive_message()
+    ).await??;
+    ```
+  </Step>
+  
+  <Step title="Monitor Performance">
+    Track execution times and success rates using the collaboration manager's statistics.
+  </Step>
+</Steps>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Publish-Subscribe" icon="broadcast-tower" href="/multi-agent/pub-sub">
+    For one-to-many broadcasting scenarios
+  </Card>
+  
+  <Card title="Sequential Pattern" icon="arrow-right" href="/multi-agent/parallel-sequential">
+    For chained request-response workflows
+  </Card>
+  
+  <Card title="Collaboration Overview" icon="diagram-project" href="/multi-agent/collaboration-patterns">
+    Return to patterns overview
+  </Card>
+  
+  <Card title="LLM Integration" icon="brain" href="/llm/overview">
+    Learn about LLM integration
+  </Card>
+</CardGroup>

@@ -1,0 +1,458 @@
+---
+title: 'LLMClient'
+description: 'High-level client for LLM interactions with session management'
+icon: 'comments'
+---
+
+## Overview
+
+The `LLMClient` provides a high-level, ergonomic API for interacting with LLM providers. It wraps `LLMProvider` implementations and provides convenient methods for chat, embeddings, and session management.
+
+## Creating a Client
+
+### Basic Usage
+
+```rust
+use mofa_foundation::llm::{LLMClient, OpenAIProvider};
+use std::sync::Arc;
+
+let provider = Arc::new(OpenAIProvider::new("sk-xxx"));
+let client = LLMClient::new(provider);
+```
+
+### With Configuration
+
+```rust
+use mofa_foundation::llm::{LLMClient, LLMConfig, OpenAIProvider};
+use std::sync::Arc;
+
+let provider = Arc::new(OpenAIProvider::new("sk-xxx"));
+
+let config = LLMConfig {
+    default_model: Some("gpt-4o".to_string()),
+    default_temperature: Some(0.7),
+    default_max_tokens: Some(2048),
+    ..Default::default()
+};
+
+let client = LLMClient::with_config(provider, config);
+```
+
+## Methods
+
+### Simple Queries
+
+<ParamField path="ask" type="async fn(question: impl Into<String>) -> LLMResult<String>">
+  Sends a simple question and returns the text response
+  
+  **Example:**
+  ```rust
+  let answer = client.ask("What is Rust?").await?;
+  println!("{}", answer);
+  ```
+</ParamField>
+
+<ParamField path="ask_with_system" type="async fn(system: impl Into<String>, question: impl Into<String>) -> LLMResult<String>">
+  Sends a question with a system prompt
+  
+  **Example:**
+  ```rust
+  let answer = client.ask_with_system(
+      "You are a Rust expert.",
+      "Explain ownership."
+  ).await?;
+  ```
+</ParamField>
+
+### Chat Builder
+
+<ParamField path="chat" type="fn() -> ChatRequestBuilder">
+  Creates a chat request builder for constructing complex requests
+  
+  **Example:**
+  ```rust
+  let response = client.chat()
+      .system("You are a helpful assistant.")
+      .user("Hello!")
+      .temperature(0.8)
+      .max_tokens(1000)
+      .send()
+      .await?;
+  ```
+</ParamField>
+
+### Embeddings
+
+<ParamField path="embed" type="async fn(input: impl Into<String>) -> LLMResult<Vec<f32>>">
+  Generates an embedding vector for a single text input
+  
+  **Example:**
+  ```rust
+  let embedding = client.embed("Hello world").await?;
+  println!("Embedding dimension: {}", embedding.len());
+  ```
+</ParamField>
+
+<ParamField path="embed_batch" type="async fn(inputs: Vec<String>) -> LLMResult<Vec<Vec<f32>>>">
+  Generates embedding vectors for multiple text inputs
+  
+  **Example:**
+  ```rust
+  let embeddings = client.embed_batch(vec![
+      "First text".to_string(),
+      "Second text".to_string(),
+  ]).await?;
+  ```
+</ParamField>
+
+## ChatRequestBuilder
+
+The builder pattern for constructing chat requests.
+
+### Message Methods
+
+<ParamField path="system" type="fn(content: impl Into<String>) -> Self">
+  Adds a system message to the conversation
+</ParamField>
+
+<ParamField path="user" type="fn(content: impl Into<String>) -> Self">
+  Adds a user message to the conversation
+</ParamField>
+
+<ParamField path="assistant" type="fn(content: impl Into<String>) -> Self">
+  Adds an assistant message to the conversation
+</ParamField>
+
+<ParamField path="message" type="fn(message: ChatMessage) -> Self">
+  Adds a complete message object
+</ParamField>
+
+<ParamField path="messages" type="fn(messages: Vec<ChatMessage>) -> Self">
+  Adds multiple messages at once
+</ParamField>
+
+### Multi-Modal Support
+
+<ParamField path="user_with_content" type="fn(content: MessageContent) -> Self">
+  Adds a user message with structured content (text, images, audio, video)
+  
+  **Example:**
+  ```rust
+  use mofa_foundation::llm::{MessageContent, ContentPart, ImageUrl};
+  
+  let content = MessageContent::Parts(vec![
+      ContentPart::Text { text: "What is in this image?".to_string() },
+      ContentPart::Image {
+          image_url: ImageUrl {
+              url: "data:image/png;base64,...".to_string(),
+              detail: Some(ImageDetail::High),
+          },
+      },
+  ]);
+  
+  let response = client.chat()
+      .user_with_content(content)
+      .send()
+      .await?;
+  ```
+</ParamField>
+
+### Parameter Configuration
+
+<ParamField path="temperature" type="fn(temp: f32) -> Self">
+  Sets the sampling temperature (0.0 to 2.0)
+</ParamField>
+
+<ParamField path="max_tokens" type="fn(tokens: u32) -> Self">
+  Sets the maximum number of tokens to generate
+</ParamField>
+
+<ParamField path="json_mode" type="fn() -> Self">
+  Enables JSON response format
+  
+  **Example:**
+  ```rust
+  let response = client.chat()
+      .system("You are a JSON API. Return {\"answer\": string}")
+      .user("What is 2+2?")
+      .json_mode()
+      .send()
+      .await?;
+  ```
+</ParamField>
+
+<ParamField path="stop" type="fn(sequences: Vec<String>) -> Self">
+  Sets stop sequences for generation
+</ParamField>
+
+### Tool Calling
+
+<ParamField path="tool" type="fn(tool: Tool) -> Self">
+  Adds a tool/function that the model can call
+  
+  **Example:**
+  ```rust
+  use mofa_foundation::llm::function_tool;
+  use serde_json::json;
+  
+  let weather_tool = function_tool(
+      "get_weather",
+      "Get weather for a location",
+      json!({
+          "type": "object",
+          "properties": {
+              "location": { "type": "string" }
+          },
+          "required": ["location"]
+      })
+  );
+  
+  let response = client.chat()
+      .user("What's the weather in Tokyo?")
+      .tool(weather_tool)
+      .send()
+      .await?;
+  ```
+</ParamField>
+
+<ParamField path="with_tool_executor" type="fn(executor: Arc<dyn ToolExecutor>) -> Self">
+  Sets the tool executor for automatic tool execution
+</ParamField>
+
+<ParamField path="max_tool_rounds" type="fn(rounds: u32) -> Self">
+  Sets the maximum number of tool calling rounds (default: 10)
+</ParamField>
+
+### Retry Configuration
+
+<ParamField path="with_retry" type="fn() -> Self">
+  Enables retry with default policy for transient failures
+  
+  **Example:**
+  ```rust
+  let response = client.chat()
+      .json_mode()
+      .with_retry()
+      .send()
+      .await?;
+  ```
+</ParamField>
+
+<ParamField path="max_retries" type="fn(max: u32) -> Self">
+  Sets maximum retry attempts
+  
+  **Example:**
+  ```rust
+  let response = client.chat()
+      .max_retries(3)
+      .send()
+      .await?;
+  ```
+</ParamField>
+
+### Execution Methods
+
+<ParamField path="send" type="async fn() -> LLMResult<ChatCompletionResponse>">
+  Sends the request and returns the complete response
+</ParamField>
+
+<ParamField path="send_stream" type="async fn() -> LLMResult<ChatStream>">
+  Sends the request and returns a streaming response
+  
+  **Example:**
+  ```rust
+  use futures::StreamExt;
+  
+  let mut stream = client.chat()
+      .user("Tell me a story")
+      .send_stream()
+      .await?;
+  
+  while let Some(chunk) = stream.next().await {
+      let chunk = chunk?;
+      if let Some(content) = chunk.content() {
+          print!("{}", content);
+      }
+  }
+  ```
+</ParamField>
+
+<ParamField path="send_with_tools" type="async fn() -> LLMResult<ChatCompletionResponse>">
+  Sends the request and automatically executes tool calls in a loop
+  
+  **Example:**
+  ```rust
+  struct MyExecutor;
+  
+  #[async_trait]
+  impl ToolExecutor for MyExecutor {
+      async fn execute(&self, name: &str, args: &str) -> LLMResult<String> {
+          match name {
+              "get_weather" => Ok(r#"{"temp": 22, "condition": "sunny"}"#.to_string()),
+              _ => Err(LLMError::Other("Unknown tool".to_string()))
+          }
+      }
+      
+      async fn available_tools(&self) -> LLMResult<Vec<Tool>> {
+          Ok(vec![/* tools */])
+      }
+  }
+  
+  let response = client.chat()
+      .user("What's the weather like?")
+      .with_tool_executor(Arc::new(MyExecutor))
+      .send_with_tools()
+      .await?;
+  ```
+</ParamField>
+
+## ChatSession
+
+Manages multi-turn conversations with message history.
+
+### Creating a Session
+
+```rust
+use mofa_foundation::llm::ChatSession;
+
+let mut session = ChatSession::new(client)
+    .with_system("You are a helpful assistant.");
+```
+
+### Session Methods
+
+<ParamField path="send" type="async fn(content: impl Into<String>) -> LLMResult<String>">
+  Sends a message and maintains conversation history
+  
+  **Example:**
+  ```rust
+  let r1 = session.send("Hello!").await?;
+  let r2 = session.send("What did I just say?").await?;
+  // r2 will reference the previous message
+  ```
+</ParamField>
+
+<ParamField path="send_with_content" type="async fn(content: MessageContent) -> LLMResult<String>">
+  Sends structured content (with images, audio, etc.)
+</ParamField>
+
+<ParamField path="with_system" type="fn(prompt: impl Into<String>) -> Self">
+  Sets the system prompt for the session
+</ParamField>
+
+<ParamField path="with_context_window_size" type="fn(size: Option<usize>) -> Self">
+  Sets the maximum number of conversation rounds to keep in memory
+  
+  **Example:**
+  ```rust
+  let session = ChatSession::new(client)
+      .with_context_window_size(Some(10)); // Keep last 10 rounds
+  ```
+</ParamField>
+
+<ParamField path="with_tools" type="fn(tools: Vec<Tool>, executor: Arc<dyn ToolExecutor>) -> Self">
+  Enables tool calling for the session
+</ParamField>
+
+<ParamField path="messages" type="fn() -> &[ChatMessage]">
+  Returns the message history
+</ParamField>
+
+<ParamField path="clear" type="fn()">
+  Clears the message history
+</ParamField>
+
+<ParamField path="session_id" type="fn() -> uuid::Uuid">
+  Returns the unique session identifier
+</ParamField>
+
+### Persistence
+
+<ParamField path="save" type="async fn() -> PersistenceResult<()>">
+  Saves the session and messages to the database
+  
+  **Example:**
+  ```rust
+  session.save().await?;
+  ```
+</ParamField>
+
+<ParamField path="load" type="async fn(...) -> PersistenceResult<Self>">
+  Loads a session from the database
+  
+  **Example:**
+  ```rust
+  let session = ChatSession::load(
+      session_id,
+      client,
+      user_id,
+      tenant_id,
+      agent_id,
+      message_store,
+      session_store,
+      Some(10), // context window size
+  ).await?;
+  ```
+</ParamField>
+
+<ParamField path="delete" type="async fn() -> PersistenceResult<()>">
+  Deletes the session and its messages from the database
+</ParamField>
+
+## Complete Example
+
+```rust
+use mofa_foundation::llm::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create client
+    let provider = Arc::new(OpenAIProvider::new("sk-xxx"));
+    let client = LLMClient::new(provider);
+
+    // Simple query
+    let answer = client.ask("What is Rust?").await?;
+    println!("Answer: {}", answer);
+
+    // Complex chat with builder
+    let response = client.chat()
+        .system("You are a coding assistant.")
+        .user("How do I read a file in Rust?")
+        .temperature(0.7)
+        .max_tokens(500)
+        .send()
+        .await?;
+    println!("Response: {}", response.content().unwrap());
+
+    // Streaming response
+    use futures::StreamExt;
+    let mut stream = client.chat()
+        .user("Tell me a short story")
+        .send_stream()
+        .await?;
+    
+    while let Some(chunk) = stream.next().await {
+        if let Some(content) = chunk?.content() {
+            print!("{}", content);
+        }
+    }
+
+    // Multi-turn session
+    let mut session = ChatSession::new(client)
+        .with_system("You are a helpful assistant.");
+    
+    let r1 = session.send("My name is Alice").await?;
+    let r2 = session.send("What's my name?").await?;
+    println!("Session response: {}", r2);
+
+    Ok(())
+}
+```
+
+## Related
+
+- [LLMProvider](/api/llm-provider) - Provider trait interface
+- [OpenAIProvider](/api/openai-provider) - OpenAI implementation
+- [AnthropicProvider](/api/anthropic-provider) - Anthropic implementation
+- [OllamaProvider](/api/ollama-provider) - Ollama implementation

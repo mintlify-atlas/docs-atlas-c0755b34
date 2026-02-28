@@ -1,0 +1,311 @@
+---
+title: 'LLMPlugin API'
+description: 'Plugin for integrating LLM providers into the MoFA agent system'
+---
+
+The `LLMPlugin` wraps LLM providers as plugins, enabling LLM capabilities to be managed through the standard plugin lifecycle.
+
+## Overview
+
+`LLMPlugin` integrates LLM providers (OpenAI, Anthropic, Ollama, etc.) into the MoFA plugin system, allowing agents to use LLM capabilities with consistent lifecycle management.
+
+## Creating an LLM Plugin
+
+```rust
+use mofa_foundation::llm::{LLMPlugin, OpenAIProvider, OpenAIConfig};
+
+// Create an LLM provider
+let config = OpenAIConfig::new("your-api-key")
+    .with_model("gpt-4")
+    .with_temperature(0.7);
+
+let provider = Arc::new(OpenAIProvider::new(config));
+
+// Create plugin
+let llm_plugin = LLMPlugin::new("openai-llm", provider);
+
+// Add to agent
+let runtime = AgentBuilder::new("my-agent", "AI Assistant")
+    .with_plugin(Box::new(llm_plugin))
+    .with_agent(agent)
+    .await?;
+```
+
+## LLMPlugin API
+
+### new
+
+Create a new LLM plugin.
+
+<ParamField path="plugin_id" type="&str">
+  Unique identifier for the plugin
+</ParamField>
+
+<ParamField path="provider" type="Arc<dyn LLMProvider>">
+  LLM provider implementation
+</ParamField>
+
+```rust
+let plugin = LLMPlugin::new("my-llm", provider);
+```
+
+### with_capability
+
+Add an LLM capability to the plugin.
+
+<ParamField path="capability" type="LLMCapability">
+  Capability to enable (Chat, Completion, Embedding, etc.)
+</ParamField>
+
+```rust
+let plugin = LLMPlugin::new("my-llm", provider)
+    .with_capability(LLMCapability::Chat)
+    .with_capability(LLMCapability::Embedding);
+```
+
+## LLM Capabilities
+
+```rust
+pub enum LLMCapability {
+    Chat,              // Chat completion
+    Completion,        // Text completion
+    Embedding,         // Text embeddings
+    ToolCalling,       // Function/tool calling
+    Streaming,         // Streaming responses
+    Vision,            // Image understanding
+    Audio,             // Audio processing
+    FunctionCalling,   // Deprecated: use ToolCalling
+}
+```
+
+## Plugin Execution
+
+The plugin accepts JSON input for LLM operations:
+
+### Chat Request
+
+```json
+{
+  "type": "chat",
+  "messages": [
+    { "role": "system", "content": "You are a helpful assistant." },
+    { "role": "user", "content": "Hello!" }
+  ],
+  "model": "gpt-4",
+  "temperature": 0.7,
+  "max_tokens": 1000
+}
+```
+
+### Embedding Request
+
+```json
+{
+  "type": "embedding",
+  "input": "Text to embed",
+  "model": "text-embedding-ada-002"
+}
+```
+
+## Supported Providers
+
+### OpenAI
+
+```rust
+use mofa_foundation::llm::{OpenAIProvider, OpenAIConfig};
+
+let config = OpenAIConfig::new(api_key)
+    .with_model("gpt-4")
+    .with_temperature(0.7)
+    .with_max_tokens(2000);
+
+let provider = Arc::new(OpenAIProvider::new(config));
+let plugin = LLMPlugin::new("openai", provider)
+    .with_capability(LLMCapability::Chat)
+    .with_capability(LLMCapability::ToolCalling)
+    .with_capability(LLMCapability::Vision);
+```
+
+### Anthropic
+
+```rust
+use mofa_foundation::llm::{AnthropicProvider, AnthropicConfig};
+
+let config = AnthropicConfig::new(api_key)
+    .with_model("claude-3-opus-20240229")
+    .with_temperature(0.8);
+
+let provider = Arc::new(AnthropicProvider::new(config));
+let plugin = LLMPlugin::new("anthropic", provider)
+    .with_capability(LLMCapability::Chat)
+    .with_capability(LLMCapability::ToolCalling);
+```
+
+### Ollama (Local)
+
+```rust
+use mofa_foundation::llm::{OllamaProvider, OllamaConfig};
+
+let config = OllamaConfig::new("http://localhost:11434")
+    .with_model("llama2");
+
+let provider = Arc::new(OllamaProvider::new(config));
+let plugin = LLMPlugin::new("ollama", provider)
+    .with_capability(LLMCapability::Chat);
+```
+
+### Google Gemini
+
+```rust
+use mofa_foundation::llm::{GeminiProvider, GeminiConfig};
+
+let config = GeminiConfig::new(api_key)
+    .with_model("gemini-pro");
+
+let provider = Arc::new(GeminiProvider::new(config));
+let plugin = LLMPlugin::new("gemini", provider)
+    .with_capability(LLMCapability::Chat)
+    .with_capability(LLMCapability::Vision);
+```
+
+## Complete Example
+
+```rust
+use mofa_foundation::llm::{
+    LLMPlugin, LLMCapability, OpenAIProvider, OpenAIConfig,
+};
+use mofa_runtime::AgentBuilder;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Configure LLM provider
+    let config = OpenAIConfig::new("sk-...")
+        .with_model("gpt-4")
+        .with_temperature(0.7)
+        .with_max_tokens(2000);
+
+    let provider = Arc::new(OpenAIProvider::new(config));
+
+    // 2. Create LLM plugin with capabilities
+    let llm_plugin = LLMPlugin::new("openai-gpt4", provider)
+        .with_capability(LLMCapability::Chat)
+        .with_capability(LLMCapability::ToolCalling)
+        .with_capability(LLMCapability::Streaming)
+        .with_capability(LLMCapability::Vision);
+
+    // 3. Create agent with LLM plugin
+    let runtime = AgentBuilder::new("assistant", "AI Assistant")
+        .with_plugin(Box::new(llm_plugin))
+        .with_agent(my_agent)
+        .await?;
+
+    // 4. Execute LLM via plugin
+    let request = serde_json::json!({
+        "type": "chat",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful coding assistant."
+            },
+            {
+                "role": "user",
+                "content": "Explain Rust ownership in simple terms."
+            }
+        ],
+        "temperature": 0.7
+    });
+
+    let response = runtime.execute_plugin(
+        "openai-gpt4",
+        serde_json::to_string(&request)?
+    ).await?;
+
+    println!("LLM Response: {}", response);
+
+    Ok(())
+}
+```
+
+## Plugin Configuration
+
+The plugin inherits configuration from the provider and can be customized via `PluginContext`:
+
+```rust
+impl AgentPlugin for LLMPlugin {
+    async fn load(&mut self, ctx: &PluginContext) -> PluginResult<()> {
+        // Access plugin configuration
+        if let Some(model) = ctx.config.get_string("model") {
+            // Override model from config
+        }
+        
+        if let Some(temp) = ctx.config.get::<f32>("temperature") {
+            // Override temperature
+        }
+        
+        Ok(())
+    }
+}
+```
+
+## Response Format
+
+LLM plugin returns responses in a structured format:
+
+```json
+{
+  "id": "chatcmpl-123",
+  "model": "gpt-4",
+  "created": 1677652288,
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Rust ownership is..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 20,
+    "completion_tokens": 100,
+    "total_tokens": 120
+  }
+}
+```
+
+## Error Handling
+
+The plugin handles provider-specific errors:
+
+```rust
+match plugin.execute(request).await {
+    Ok(response) => println!("Success: {}", response),
+    Err(PluginError::ExecutionFailed(msg)) => {
+        eprintln!("LLM execution failed: {}", msg);
+    }
+    Err(e) => eprintln!("Plugin error: {}", e),
+}
+```
+
+## Statistics
+
+LLM plugins track usage statistics:
+
+```rust
+let stats = plugin.stats();
+// Returns:
+// {
+//   "requests_total": 150,
+//   "tokens_used": 45000,
+//   "avg_latency_ms": 850.5,
+//   "errors_total": 2
+// }
+```
+
+## Related
+
+- [AgentPlugin Trait](/api/plugin-trait) - Base plugin interface
+- [LLM Client](/guides/llm-integration) - Using LLM without plugins
+- [Provider Configuration](/configuration/llm-providers) - LLM provider setup

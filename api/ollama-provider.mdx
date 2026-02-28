@@ -1,0 +1,489 @@
+---
+title: 'OllamaProvider'
+description: 'Local LLM provider using Ollama with OpenAI-compatible API'
+icon: 'computer'
+---
+
+## Overview
+
+The `OllamaProvider` enables running open-source LLMs locally through Ollama. It's a thin wrapper around `OpenAIProvider` that connects to Ollama's OpenAI-compatible API endpoint.
+
+## What is Ollama?
+
+[Ollama](https://ollama.ai/) lets you run large language models locally on your machine. It provides:
+
+- Easy installation and model management
+- OpenAI-compatible REST API
+- Support for Llama, Mistral, Phi, and many other models
+- GPU acceleration support
+- No API keys or cloud dependencies required
+
+## Installation
+
+### Install Ollama
+
+```bash
+# macOS
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Linux
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Windows
+# Download from https://ollama.com/download
+```
+
+### Pull a Model
+
+```bash
+# Pull Llama 3
+ollama pull llama3
+
+# Pull Mistral
+ollama pull mistral
+
+# Pull other models
+ollama pull llama3.1
+ollama pull llama3.2
+ollama pull codellama
+```
+
+### Start Ollama Server
+
+```bash
+ollama serve
+# Server runs on http://localhost:11434
+```
+
+## Configuration
+
+### OllamaConfig
+
+```rust
+pub struct OllamaConfig {
+    pub base_url: String,
+    pub default_model: String,
+    pub default_temperature: f32,
+    pub default_max_tokens: u32,
+    pub timeout_secs: u64,
+}
+```
+
+<ParamField path="base_url" type="String" default="http://localhost:11434/v1">
+  Ollama API endpoint (automatically appends `/v1` if needed)
+</ParamField>
+
+<ParamField path="default_model" type="String" default="llama3">
+  Default model identifier
+</ParamField>
+
+<ParamField path="default_temperature" type="f32" default="0.7">
+  Default sampling temperature
+</ParamField>
+
+<ParamField path="default_max_tokens" type="u32" default="2048">
+  Default maximum output tokens
+</ParamField>
+
+<ParamField path="timeout_secs" type="u64" default="60">
+  Request timeout in seconds
+</ParamField>
+
+## Creating a Provider
+
+### Basic Usage
+
+```rust
+use mofa_foundation::llm::OllamaProvider;
+
+// Uses default localhost endpoint and llama3 model
+let provider = OllamaProvider::new();
+```
+
+### From Environment
+
+```rust
+// Reads OLLAMA_BASE_URL and OLLAMA_MODEL
+let provider = OllamaProvider::from_env();
+```
+
+### With Configuration
+
+```rust
+use mofa_foundation::llm::{OllamaProvider, OllamaConfig};
+
+let config = OllamaConfig::new()
+    .with_base_url("http://localhost:11434")
+    .with_model("mistral")
+    .with_temperature(0.8)
+    .with_max_tokens(4096);
+
+let provider = OllamaProvider::with_config(config);
+```
+
+## Supported Models
+
+### Llama 3.2 Series
+
+- **llama3.2**: Lightweight 3B model (131K context)
+- **llama3.2:3b**: Explicit 3B version
+
+### Llama 3.1 Series
+
+- **llama3.1**: 8B model with 128K context window
+- **llama3.1:8b**: Explicit 8B version
+- **llama3.1:70b**: Large 70B model
+
+### Llama 3 Series
+
+- **llama3**: 8B instruction-tuned (8K context)
+- **llama3:8b**: Explicit 8B version
+- **llama3:70b**: Large 70B model
+
+### Llama 2 Series
+
+- **llama2**: 7B chat model (4K context)
+- **llama2:7b**: Explicit 7B version
+- **llama2:13b**: Medium 13B model
+- **llama2:70b**: Large 70B model
+
+### Mistral Series
+
+- **mistral**: 7B instruction-tuned (32K context)
+- **mistral:7b**: Explicit 7B version
+- **mixtral**: Mixture of Experts (32K context)
+
+### Code Models
+
+- **codellama**: Code generation
+- **deepseek-coder**: Advanced code model
+- **starcoder**: Multi-language code model
+
+### Other Models
+
+- **phi**: Microsoft's small efficient model
+- **gemma**: Google's open model
+- **qwen**: Alibaba's multilingual model
+- **neural-chat**: Intel's optimized model
+
+## Model Capabilities
+
+```rust
+use mofa_foundation::llm::OllamaProvider;
+
+let provider = OllamaProvider::new();
+
+// Check capabilities
+provider.supports_streaming(); // true
+provider.supports_tools();     // true (most models)
+provider.supports_vision();    // true (vision models like llava)
+provider.supports_embedding(); // true
+```
+
+## Usage Examples
+
+### Simple Chat
+
+```rust
+use mofa_foundation::llm::{LLMClient, OllamaProvider};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = Arc::new(OllamaProvider::new());
+    let client = LLMClient::new(provider);
+
+    let answer = client.ask("What is Rust programming?").await?;
+    println!("Answer: {}", answer);
+
+    Ok(())
+}
+```
+
+### Streaming Response
+
+```rust
+use futures::StreamExt;
+
+let provider = Arc::new(OllamaProvider::new());
+let client = LLMClient::new(provider);
+
+let mut stream = client.chat()
+    .user("Tell me a story about Rust")
+    .send_stream()
+    .await?;
+
+while let Some(chunk) = stream.next().await {
+    if let Some(content) = chunk?.content() {
+        print!("{}", content);
+    }
+}
+println!();
+```
+
+### Code Generation
+
+```rust
+let config = OllamaConfig::new()
+    .with_model("codellama")
+    .with_temperature(0.2);  // Lower for more deterministic code
+
+let provider = Arc::new(OllamaProvider::with_config(config));
+let client = LLMClient::new(provider);
+
+let code = client.ask_with_system(
+    "You are an expert Rust programmer.",
+    "Write a function to read a file and count lines."
+).await?;
+
+println!("Generated code:\n{}", code);
+```
+
+### Different Models
+
+```rust
+// Use Mistral for general tasks
+let mistral = OllamaProvider::with_config(
+    OllamaConfig::new().with_model("mistral")
+);
+
+// Use Llama 3.1 for long context
+let llama = OllamaProvider::with_config(
+    OllamaConfig::new().with_model("llama3.1:70b")
+);
+
+// Use CodeLlama for coding
+let codellama = OllamaProvider::with_config(
+    OllamaConfig::new().with_model("codellama")
+);
+```
+
+### Multi-Turn Conversation
+
+```rust
+use mofa_foundation::llm::ChatSession;
+
+let provider = Arc::new(OllamaProvider::new());
+let client = LLMClient::new(provider);
+
+let mut session = ChatSession::new(client)
+    .with_system("You are a helpful coding assistant.");
+
+let r1 = session.send("How do I create a HashMap in Rust?").await?;
+println!("Bot: {}\n", r1);
+
+let r2 = session.send("Can you show an example?").await?;
+println!("Bot: {}\n", r2);
+
+let r3 = session.send("What about error handling?").await?;
+println!("Bot: {}", r3);
+```
+
+### Tool Calling
+
+```rust
+use mofa_foundation::llm::*;
+use serde_json::json;
+
+let tool = function_tool(
+    "execute_code",
+    "Execute Rust code and return result",
+    json!({
+        "type": "object",
+        "properties": {
+            "code": { "type": "string" }
+        },
+        "required": ["code"]
+    })
+);
+
+let response = client.chat()
+    .user("Run some Rust code that prints 'Hello, World!'")
+    .tool(tool)
+    .send()
+    .await?;
+
+if let Some(tool_calls) = response.tool_calls() {
+    for call in tool_calls {
+        println!("Tool: {}", call.function.name);
+        println!("Args: {}", call.function.arguments);
+    }
+}
+```
+
+### JSON Mode
+
+```rust
+let response = client.chat()
+    .system("You are a JSON API. Always respond with valid JSON.")
+    .user("What are the top 3 features of Rust?")
+    .json_mode()
+    .send()
+    .await?;
+
+let json: serde_json::Value = serde_json::from_str(response.content().unwrap())?;
+println!("JSON response: {:#}", json);
+```
+
+## Model Information
+
+```rust
+let provider = OllamaProvider::new();
+let info = provider.get_model_info("llama3.1").await?;
+
+println!("Model: {}", info.name);
+println!("Description: {:?}", info.description);
+println!("Context window: {:?} tokens", info.context_window);
+println!("Max output: {:?} tokens", info.max_output_tokens);
+println!("\nCapabilities:");
+println!("  Streaming: {}", info.capabilities.streaming);
+println!("  Tools: {}", info.capabilities.tools);
+println!("  Vision: {}", info.capabilities.vision);
+println!("  JSON mode: {}", info.capabilities.json_mode);
+```
+
+## Performance Tips
+
+### GPU Acceleration
+
+Ollama automatically uses GPU if available. Check with:
+
+```bash
+ollama ps
+```
+
+### Model Quantization
+
+Pull quantized models for faster inference:
+
+```bash
+# 4-bit quantization (faster, less memory)
+ollama pull llama3:8b-instruct-q4_0
+
+# 8-bit quantization (better quality)
+ollama pull llama3:8b-instruct-q8_0
+```
+
+### Memory Management
+
+```bash
+# Keep model in memory
+ollama run llama3
+
+# Unload models to free memory
+ollama stop llama3
+```
+
+## Remote Ollama Server
+
+Connect to Ollama running on another machine:
+
+```rust
+let config = OllamaConfig::new()
+    .with_base_url("http://192.168.1.100:11434")
+    .with_model("llama3");
+
+let provider = OllamaProvider::with_config(config);
+```
+
+## Complete Example
+
+```rust
+use mofa_foundation::llm::*;
+use std::sync::Arc;
+use futures::StreamExt;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create provider
+    let config = OllamaConfig::new()
+        .with_model("llama3.1")
+        .with_temperature(0.7)
+        .with_max_tokens(2048);
+    
+    let provider = Arc::new(OllamaProvider::with_config(config));
+    let client = LLMClient::new(provider.clone());
+
+    println!("Provider: {}", provider.name());
+    println!("Model: {}\n", provider.default_model());
+
+    // Simple query
+    let answer = client.ask("What makes Rust memory safe?").await?;
+    println!("Answer: {}\n", answer);
+
+    // Streaming
+    println!("Streaming response:");
+    let mut stream = client.chat()
+        .system("You are a Rust expert.")
+        .user("Explain lifetimes in 2 sentences.")
+        .send_stream()
+        .await?;
+    
+    while let Some(chunk) = stream.next().await {
+        if let Some(content) = chunk?.content() {
+            print!("{}", content);
+        }
+    }
+    println!("\n");
+
+    // Code generation with CodeLlama
+    let code_config = OllamaConfig::new().with_model("codellama");
+    let code_provider = Arc::new(OllamaProvider::with_config(code_config));
+    let code_client = LLMClient::new(code_provider);
+
+    let code = code_client.ask(
+        "Write a Rust function to calculate fibonacci numbers recursively"
+    ).await?;
+    println!("Generated code:\n{}", code);
+
+    Ok(())
+}
+```
+
+## Troubleshooting
+
+### Connection Refused
+
+Ensure Ollama is running:
+
+```bash
+ollama serve
+```
+
+### Model Not Found
+
+Pull the model first:
+
+```bash
+ollama pull llama3
+```
+
+### Slow Performance
+
+- Use quantized models (q4_0, q5_0)
+- Ensure GPU drivers are installed
+- Check available RAM
+- Reduce `max_tokens`
+
+### Out of Memory
+
+```bash
+# Unload models
+ollama stop llama3
+
+# Use smaller models
+ollama pull llama3.2:3b
+```
+
+## Environment Variables
+
+- `OLLAMA_BASE_URL`: Custom Ollama server URL
+- `OLLAMA_MODEL`: Default model name
+
+## Related
+
+- [LLMProvider](/api/llm-provider) - Provider trait
+- [LLMClient](/api/llm-client) - Client API
+- [OpenAIProvider](/api/openai-provider) - OpenAI GPT models
+- [AnthropicProvider](/api/anthropic-provider) - Anthropic Claude
+- [Ollama Documentation](https://github.com/ollama/ollama) - Official Ollama docs
