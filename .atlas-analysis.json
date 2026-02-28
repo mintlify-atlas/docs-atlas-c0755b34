@@ -1,0 +1,228 @@
+{
+  "projectType": "framework",
+  "projectName": "MoFA",
+  "projectDescription": "Modular Framework for Agents - A production-grade Rust framework for building AI agents with extreme performance and runtime programmability",
+  "theme": "aspen",
+  "primaryColor": "#FF6B35",
+  "lightColor": "#FFB88C",
+  "darkColor": "#D45A2A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/microkernel",
+              "concepts/dual-layer-plugins",
+              "concepts/agent-coordination",
+              "concepts/workflow-engine"
+            ]
+          },
+          {
+            "group": "Building Agents",
+            "pages": [
+              "guides/your-first-agent",
+              "guides/llm-integration",
+              "guides/agent-lifecycle",
+              "guides/capabilities-and-state"
+            ]
+          },
+          {
+            "group": "Plugin Development",
+            "pages": [
+              "plugins/overview",
+              "plugins/compile-time-plugins",
+              "plugins/runtime-plugins",
+              "plugins/rhai-scripting",
+              "plugins/wasm-plugins"
+            ]
+          },
+          {
+            "group": "Multi-Agent Systems",
+            "pages": [
+              "multi-agent/collaboration-patterns",
+              "multi-agent/request-response",
+              "multi-agent/pub-sub",
+              "multi-agent/consensus",
+              "multi-agent/debate",
+              "multi-agent/parallel-sequential",
+              "multi-agent/secretary-pattern"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/workflow-orchestration",
+              "advanced/persistence",
+              "advanced/monitoring",
+              "advanced/distributed-runtime",
+              "advanced/security"
+            ]
+          },
+          {
+            "group": "Language Bindings",
+            "pages": [
+              "bindings/overview",
+              "bindings/python",
+              "bindings/java",
+              "bindings/kotlin",
+              "bindings/swift",
+              "bindings/go"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/mofa-agent",
+              "api/agent-input-output",
+              "api/agent-context",
+              "api/agent-capabilities",
+              "api/agent-lifecycle"
+            ]
+          },
+          {
+            "group": "LLM Integration",
+            "pages": [
+              "api/llm-provider",
+              "api/llm-client",
+              "api/openai-provider",
+              "api/anthropic-provider",
+              "api/ollama-provider"
+            ]
+          },
+          {
+            "group": "Agent Patterns",
+            "pages": [
+              "api/react-agent",
+              "api/secretary-agent",
+              "api/coordination-protocols"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "api/plugin-trait",
+              "api/tool-plugin",
+              "api/llm-plugin",
+              "api/storage-plugin",
+              "api/rhai-plugin"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "api/agent-builder",
+              "api/agent-runtime",
+              "api/simple-runtime",
+              "api/message-bus"
+            ]
+          },
+          {
+            "group": "Workflow",
+            "pages": [
+              "api/state-graph",
+              "api/workflow-nodes",
+              "api/workflow-dsl"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/new",
+              "cli/agent",
+              "cli/plugin",
+              "cli/session",
+              "cli/config",
+              "cli/db"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Basic Examples",
+            "pages": [
+              "examples/hello-world",
+              "examples/chat-stream",
+              "examples/react-agent"
+            ]
+          },
+          {
+            "group": "Advanced Examples",
+            "pages": [
+              "examples/multi-agent-coordination",
+              "examples/secretary-agent",
+              "examples/workflow-orchestration",
+              "examples/rhai-hot-reload",
+              "examples/wasm-plugin"
+            ]
+          },
+          {
+            "group": "Domain-Specific",
+            "pages": [
+              "examples/financial-compliance",
+              "examples/medical-diagnosis"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Microkernel architecture with dual-layer plugin system",
+    "Rust core with UniFFI multi-language bindings",
+    "Runtime programmability via Rhai scripting",
+    "Multi-agent collaboration patterns (request-response, pub-sub, consensus, debate, parallel, sequential)",
+    "LLM provider abstraction (OpenAI, Anthropic, Ollama, Gemini)",
+    "ReAct pattern for reasoning and action",
+    "Secretary agent mode for human-in-the-loop workflows",
+    "Workflow orchestration with StateGraph API",
+    "Distributed dataflow via Dora-rs integration",
+    "Persistence layer supporting PostgreSQL, MySQL, SQLite",
+    "Hot-reloadable plugins and scripts",
+    "CLI tool for scaffolding and agent management"
+  ],
+  "publicApiSurface": [
+    "MoFAAgent trait - Core agent interface",
+    "AgentBuilder - Fluent API for constructing agents",
+    "LLMProvider trait - LLM integration interface",
+    "LLMClient - High-level LLM interaction client",
+    "Tool trait - Tool/function calling interface",
+    "AgentPlugin trait - Plugin system interface",
+    "StateGraph API - Workflow orchestration",
+    "SimpleRuntime - Multi-agent coordination runtime",
+    "AgentRuntime - Dora-rs distributed runtime",
+    "ReActAgent - Reasoning and action agent",
+    "SecretaryAgent - Human-in-the-loop agent",
+    "CoordinationPattern - Multi-agent collaboration patterns",
+    "RhaiPlugin - Runtime scripting plugin",
+    "ToolPlugin - Tool registration and execution",
+    "PersistencePlugin - Session and message persistence",
+    "MessageBus - Agent communication bus",
+    "mofa CLI - Agent scaffolding and management commands"
+  ]
+}
