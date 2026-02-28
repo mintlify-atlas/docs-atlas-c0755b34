@@ -1,0 +1,434 @@
+---
+title: 'GeminiProvider'
+description: 'Google Gemini API provider implementation for MoFA'
+icon: 'brain'
+---
+
+## Overview
+
+The `GeminiProvider` implements the `LLMProvider` trait for Google's Gemini API, supporting Gemini 1.5 Pro and other Gemini models. It provides text generation and multi-modal capabilities through the Generative Language API v1beta.
+
+<Note>
+  The Gemini provider is currently experimental and supports text-only and vision capabilities. Tool/function calling support is planned for future releases.
+</Note>
+
+## Configuration
+
+### GeminiConfig
+
+```rust
+pub struct GeminiConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub default_model: String,
+    pub default_temperature: f32,
+    pub default_max_tokens: u32,
+    pub timeout_secs: u64,
+}
+```
+
+<ParamField path="api_key" type="String" required>
+  Google AI API key (obtain from [Google AI Studio](https://makersuite.google.com/app/apikey))
+</ParamField>
+
+<ParamField path="base_url" type="String" default="https://generativelanguage.googleapis.com">
+  API base URL for the Generative Language API
+</ParamField>
+
+<ParamField path="default_model" type="String" default="gemini-1.5-pro-latest">
+  Default model to use when not specified in requests
+  
+  Available models:
+  - `gemini-1.5-pro-latest`
+  - `gemini-1.5-flash-latest`
+  - `gemini-pro`
+</ParamField>
+
+<ParamField path="default_temperature" type="f32" default="0.7">
+  Default sampling temperature (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="default_max_tokens" type="u32" default="2048">
+  Default maximum tokens to generate
+</ParamField>
+
+<ParamField path="timeout_secs" type="u64" default="60">
+  Request timeout in seconds
+</ParamField>
+
+## Creating a Provider
+
+### Basic Usage
+
+```rust
+use mofa_foundation::llm::GeminiProvider;
+
+let provider = GeminiProvider::new("your-api-key");
+```
+
+### From Environment
+
+```rust
+// Reads GEMINI_API_KEY, GEMINI_MODEL, GEMINI_BASE_URL
+let provider = GeminiProvider::from_env();
+```
+
+### With Configuration
+
+```rust
+use mofa_foundation::llm::{GeminiProvider, GeminiConfig};
+
+let config = GeminiConfig::new("your-api-key")
+    .with_model("gemini-1.5-flash-latest")
+    .with_temperature(0.8)
+    .with_max_tokens(4096)
+    .with_timeout(120);
+
+let provider = GeminiProvider::with_config(config);
+```
+
+## Supported Models
+
+### Gemini 1.5 Pro
+
+- **gemini-1.5-pro-latest**: Most capable model with 1M+ token context window
+- **gemini-1.5-flash-latest**: Faster, more efficient version
+
+### Gemini Pro
+
+- **gemini-pro**: Standard Gemini model
+- **gemini-pro-vision**: Vision-enabled variant (legacy)
+
+## Features
+
+### Capabilities
+
+```rust
+let provider = GeminiProvider::new("api-key");
+
+println!("Streaming: {}", provider.supports_streaming()); // false (planned)
+println!("Tools: {}", provider.supports_tools()); // false (planned)
+println!("Vision: {}", provider.supports_vision()); // false (planned)
+```
+
+### Basic Chat Completion
+
+```rust
+use mofa_foundation::llm::{LLMClient, GeminiProvider};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = Arc::new(GeminiProvider::new("your-api-key"));
+    let client = LLMClient::new(provider);
+
+    let response = client.chat()
+        .system("You are a helpful assistant")
+        .user("What is Rust?")
+        .send()
+        .await?;
+
+    println!("Response: {}", response.content().unwrap());
+    Ok(())
+}
+```
+
+### Multi-Turn Conversation
+
+```rust
+use mofa_foundation::llm::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = Arc::new(GeminiProvider::from_env());
+    let client = LLMClient::new(provider);
+
+    let response = client.chat()
+        .system("You are a knowledgeable programming expert")
+        .user("What is Rust?")
+        .assistant("Rust is a systems programming language...")
+        .user("What are its main benefits?")
+        .send()
+        .await?;
+
+    println!("Answer: {}", response.content().unwrap());
+    Ok(())
+}
+```
+
+### Vision (Multi-Modal)
+
+```rust
+use mofa_foundation::llm::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = Arc::new(GeminiProvider::new("api-key"));
+    let client = LLMClient::new(provider);
+
+    let content = MessageContent::Parts(vec![
+        ContentPart::Text {
+            text: "What do you see in this image?".to_string(),
+        },
+        ContentPart::Image {
+            image_url: ImageUrl {
+                url: "data:image/png;base64,iVBORw0KGgoAAAA...".to_string(),
+                detail: Some(ImageDetail::High),
+            },
+        },
+    ]);
+
+    let response = client.chat()
+        .user_with_content(content)
+        .send()
+        .await?;
+
+    println!("Analysis: {}", response.content().unwrap());
+    Ok(())
+}
+```
+
+### Audio Input
+
+```rust
+use mofa_foundation::llm::*;
+
+let content = MessageContent::Parts(vec![
+    ContentPart::Text {
+        text: "Transcribe this audio".to_string(),
+    },
+    ContentPart::Audio {
+        audio: AudioInput {
+            data: "data:audio/mp3;base64,SUQzBAA...".to_string(),
+            format: "mp3".to_string(),
+        },
+    },
+]);
+
+let response = client.chat()
+    .user_with_content(content)
+    .send()
+    .await?;
+```
+
+### Video Input
+
+```rust
+use mofa_foundation::llm::*;
+
+let content = MessageContent::Parts(vec![
+    ContentPart::Text {
+        text: "Describe what happens in this video".to_string(),
+    },
+    ContentPart::Video {
+        video: VideoInput {
+            data: "data:video/mp4;base64,AAAAIGZ0eXBpc29t...".to_string(),
+            format: "mp4".to_string(),
+        },
+    },
+]);
+
+let response = client.chat()
+    .user_with_content(content)
+    .send()
+    .await?;
+```
+
+### Generation Parameters
+
+```rust
+use mofa_foundation::llm::*;
+
+let response = client.chat()
+    .user("Write a short poem")
+    .temperature(0.9)        // Higher creativity
+    .max_tokens(500)         // Limit output length
+    .top_p(0.95)             // Nucleus sampling
+    .stop(vec!["\n\n"])      // Stop sequences
+    .send()
+    .await?;
+```
+
+## Error Handling
+
+The provider maps Gemini API errors to `LLMError` variants:
+
+```rust
+use mofa_foundation::llm::LLMError;
+
+match client.chat().user("Test").send().await {
+    Ok(response) => println!("Success: {}", response.content().unwrap()),
+    Err(LLMError::ApiError { code, message }) => {
+        println!("API Error {}: {}", code.unwrap_or_default(), message)
+    }
+    Err(LLMError::Timeout(msg)) => println!("Timeout: {}", msg),
+    Err(LLMError::NetworkError(msg)) => println!("Network error: {}", msg),
+    Err(LLMError::RateLimited(msg)) => println!("Rate limited: {}", msg),
+    Err(e) => println!("Other error: {}", e),
+}
+```
+
+## Model Information
+
+```rust
+let provider = GeminiProvider::new("api-key");
+let info = provider.get_model_info("gemini-1.5-pro-latest").await?;
+
+println!("Model: {}", info.name);
+println!("Max output tokens: {}", info.max_output_tokens.unwrap());
+println!("Capabilities:");
+println!("  - Streaming: {}", info.capabilities.streaming);
+println!("  - Tools: {}", info.capabilities.tools);
+println!("  - Vision: {}", info.capabilities.vision);
+println!("  - JSON mode: {}", info.capabilities.json_mode);
+```
+
+## Health Check
+
+```rust
+let provider = GeminiProvider::new("api-key");
+
+if provider.health_check().await? {
+    println!("Gemini API is accessible");
+} else {
+    println!("Gemini API is not responding");
+}
+```
+
+## Complete Example
+
+```rust
+use mofa_foundation::llm::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create provider from environment
+    let config = GeminiConfig::from_env()
+        .with_model("gemini-1.5-pro-latest")
+        .with_temperature(0.7)
+        .with_max_tokens(2048);
+    
+    let provider = Arc::new(GeminiProvider::with_config(config));
+    let client = LLMClient::new(provider.clone());
+
+    // Check health
+    if !provider.health_check().await? {
+        eprintln!("Gemini API is not accessible");
+        return Ok(());
+    }
+
+    // Simple query
+    println!("Simple Query:");
+    let answer = client.ask("What is the capital of France?").await?;
+    println!("Answer: {}\n", answer);
+
+    // Multi-turn conversation
+    println!("Multi-turn Conversation:");
+    let response = client.chat()
+        .system("You are a travel guide")
+        .user("I'm visiting Paris. What should I see?")
+        .send()
+        .await?;
+    println!("Recommendations: {}\n", response.content().unwrap());
+
+    // Vision example (with base64 encoded image)
+    println!("Vision Analysis:");
+    let vision_content = MessageContent::Parts(vec![
+        ContentPart::Text {
+            text: "What landmarks are in this image?".to_string(),
+        },
+        ContentPart::Image {
+            image_url: ImageUrl {
+                url: "data:image/jpeg;base64,/9j/4AAQSkZJRg...".to_string(),
+                detail: None,
+            },
+        },
+    ]);
+
+    let vision_response = client.chat()
+        .user_with_content(vision_content)
+        .send()
+        .await?;
+    println!("Analysis: {}\n", vision_response.content().unwrap());
+
+    // Usage statistics
+    if let Some(usage) = response.usage {
+        println!("Token Usage:");
+        println!("  Prompt: {} tokens", usage.prompt_tokens);
+        println!("  Completion: {} tokens", usage.completion_tokens);
+        println!("  Total: {} tokens", usage.total_tokens);
+    }
+
+    // Provider info
+    println!("\nProvider: {}", provider.name());
+    println!("Default model: {}", provider.default_model());
+
+    Ok(())
+}
+```
+
+## Limitations
+
+<Warning>
+  Current limitations of the Gemini provider:
+  
+  - **Streaming**: Not yet implemented (returns error)
+  - **Tool calling**: Not yet implemented (returns unsupported)
+  - **Function calling**: Planned for future release
+  - **Embeddings**: Not supported by Generative Language API v1beta
+</Warning>
+
+## Environment Variables
+
+- `GEMINI_API_KEY`: Google AI API key (required)
+- `GEMINI_MODEL`: Default model name
+- `GEMINI_BASE_URL`: Custom API base URL
+
+## API Key Setup
+
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Get API Key"
+4. Copy the key and set it as `GEMINI_API_KEY` environment variable
+
+```bash
+export GEMINI_API_KEY="your-api-key-here"
+```
+
+## Context Window
+
+Gemini 1.5 Pro supports extremely large context windows:
+
+- **gemini-1.5-pro-latest**: Up to 1 million tokens (experimental: 2 million)
+- **gemini-1.5-flash-latest**: Up to 1 million tokens
+- **gemini-pro**: 32,768 tokens
+
+## Rate Limits
+
+Be aware of Gemini API rate limits:
+
+- **Free tier**: 60 requests per minute
+- **Paid tier**: Higher limits based on quota
+
+The provider will return `LLMError::RateLimited` when limits are exceeded.
+
+## Best Practices
+
+1. **API Key Security**: Store API keys in environment variables, not in code
+2. **Error Handling**: Always handle API errors gracefully
+3. **Timeouts**: Set appropriate timeouts for long-running requests
+4. **Rate Limiting**: Implement retry logic with exponential backoff
+5. **Context Management**: Be mindful of context window limits
+6. **Multi-modal Content**: Use appropriate formats for images (JPEG, PNG, WebP)
+7. **System Instructions**: Use system messages to set behavior and context
+
+## Related
+
+- [LLMProvider](/api/llm-provider) - Provider trait interface
+- [LLMClient](/api/llm-client) - Client API for all providers
+- [OpenAIProvider](/api/openai-provider) - OpenAI GPT models
+- [AnthropicProvider](/api/anthropic-provider) - Anthropic Claude models
+- [OllamaProvider](/api/ollama-provider) - Local models via Ollama

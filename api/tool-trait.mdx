@@ -1,0 +1,563 @@
+---
+title: 'Tool Trait'
+description: 'Unified tool interface for agent tool execution in the MoFA kernel'
+icon: 'wrench'
+---
+
+## Overview
+
+The `Tool` trait defines the unified interface for creating executable tools that agents can use. It merges the functionalities of `ToolExecutor` and `ReActTool`, providing a consistent API for tool definition, validation, and execution.
+
+All tools must implement this trait to be used by MoFA agents. The trait supports custom argument and output types through generics, with `serde_json::Value` as the default.
+
+## Trait Definition
+
+```rust
+#[async_trait]
+pub trait Tool<Args = serde_json::Value, Out = serde_json::Value>: Send + Sync
+where
+    Args: serde::de::DeserializeOwned + Send + Sync + 'static,
+    Out: serde::Serialize + Send + Sync + 'static,
+{
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn parameters_schema(&self) -> serde_json::Value;
+    async fn execute(&self, input: ToolInput<Args>, ctx: &AgentContext) -> ToolResult<Out>;
+    fn metadata(&self) -> ToolMetadata;
+    fn validate_input(&self, input: &ToolInput<Args>) -> AgentResult<()>;
+    fn requires_confirmation(&self) -> bool;
+    fn to_llm_tool(&self) -> LLMTool;
+}
+```
+
+## Required Methods
+
+<ParamField path="name" type="fn() -> &str" required>
+  Returns the unique identifier for this tool. Must be unique across all registered tools in the agent.
+  
+  **Example:**
+  ```rust
+  fn name(&self) -> &str {
+      "calculator"
+  }
+  ```
+</ParamField>
+
+<ParamField path="description" type="fn() -> &str" required>
+  Returns a human-readable description of what the tool does. This description is used by LLMs to understand when to use the tool.
+  
+  **Example:**
+  ```rust
+  fn description(&self) -> &str {
+      "Perform arithmetic operations like addition, subtraction, multiplication, and division"
+  }
+  ```
+</ParamField>
+
+<ParamField path="parameters_schema" type="fn() -> serde_json::Value" required>
+  Returns the JSON Schema describing the tool's parameters. This schema is used for validation and to inform the LLM about expected inputs.
+  
+  **Example:**
+  ```rust
+  fn parameters_schema(&self) -> serde_json::Value {
+      serde_json::json!({
+          "type": "object",
+          "properties": {
+              "operation": {
+                  "type": "string",
+                  "enum": ["add", "sub", "mul", "div"],
+                  "description": "The operation to perform"
+              },
+              "a": { "type": "number", "description": "First operand" },
+              "b": { "type": "number", "description": "Second operand" }
+          },
+          "required": ["operation", "a", "b"]
+      })
+  }
+  ```
+</ParamField>
+
+<ParamField path="execute" type="async fn(input: ToolInput&lt;Args&gt;, ctx: &AgentContext) -> ToolResult&lt;Out&gt;" required>
+  Executes the tool with the provided input and context. This is the core functionality of the tool.
+  
+  **Parameters:**
+  - `input`: The tool input containing structured arguments and optional raw input
+  - `ctx`: The agent context for accessing shared resources
+  
+  **Returns:**
+  - `ToolResult<Out>`: The execution result containing success status, output, and optional error information
+  
+  **Example:**
+  ```rust
+  async fn execute(&self, input: ToolInput<Args>, ctx: &AgentContext) -> ToolResult<Out> {
+      let op = input.get_str("operation").unwrap();
+      let a = input.get_number("a").unwrap();
+      let b = input.get_number("b").unwrap();
+      
+      let result = match op {
+          "add" => a + b,
+          "sub" => a - b,
+          "mul" => a * b,
+          "div" => a / b,
+          _ => return ToolResult::failure("Unknown operation"),
+      };
+      
+      ToolResult::success(serde_json::json!({ "result": result }))
+  }
+  ```
+</ParamField>
+
+## Optional Methods
+
+<ParamField path="metadata" type="fn() -> ToolMetadata" default="ToolMetadata::default()">
+  Returns metadata about the tool including category, tags, and capability requirements.
+  
+  **Example:**
+  ```rust
+  fn metadata(&self) -> ToolMetadata {
+      ToolMetadata::new()
+          .with_category("math")
+          .with_tag("arithmetic")
+          .needs_network(false)
+          .needs_filesystem(false)
+  }
+  ```
+</ParamField>
+
+<ParamField path="validate_input" type="fn(input: &ToolInput&lt;Args&gt;) -> AgentResult&lt;()&gt;" default="Ok(())">
+  Validates the tool input before execution. Override this to implement custom validation logic.
+  
+  **Example:**
+  ```rust
+  fn validate_input(&self, input: &ToolInput<Args>) -> AgentResult<()> {
+      if let Some(divisor) = input.get_number("b") {
+          if divisor == 0.0 {
+              return Err(AgentError::InvalidInput("Division by zero".to_string()));
+          }
+      }
+      Ok(())
+  }
+  ```
+</ParamField>
+
+<ParamField path="requires_confirmation" type="fn() -> bool" default="false">
+  Returns whether this tool requires user confirmation before execution. Useful for dangerous operations.
+  
+  **Example:**
+  ```rust
+  fn requires_confirmation(&self) -> bool {
+      true // For destructive operations like file deletion
+  }
+  ```
+</ParamField>
+
+<ParamField path="to_llm_tool" type="fn() -> LLMTool" default="LLMTool::from(self)">
+  Converts this tool to the LLM tool format used for API calls. The default implementation uses the name, description, and parameters schema.
+</ParamField>
+
+## Core Types
+
+### ToolInput
+
+```rust
+pub struct ToolInput<Args = serde_json::Value> {
+    pub arguments: Args,
+    pub raw_input: Option<String>,
+}
+```
+
+Represents the input to a tool execution.
+
+<ParamField path="arguments" type="Args" required>
+  Structured arguments parsed from JSON
+</ParamField>
+
+<ParamField path="raw_input" type="Option&lt;String&gt;">
+  Optional raw string input
+</ParamField>
+
+#### Helper Methods
+
+```rust
+// Create from structured arguments
+ToolInput::new(arguments)
+
+// Create from JSON value
+ToolInput::from_json(json_value)
+
+// Create from raw string
+ToolInput::from_raw("raw string")
+
+// Get typed parameter
+input.get::<i32>("count")
+
+// Get string parameter
+input.get_str("name")
+
+// Get number parameter
+input.get_number("value")
+
+// Get boolean parameter
+input.get_bool("enabled")
+```
+
+### ToolResult
+
+```rust
+pub struct ToolResult<Out = serde_json::Value> {
+    pub success: bool,
+    pub output: Out,
+    pub error: Option<String>,
+    pub metadata: HashMap<String, String>,
+}
+```
+
+Represents the result of tool execution.
+
+<ResponseField name="success" type="bool" required>
+  Whether the execution was successful
+</ResponseField>
+
+<ResponseField name="output" type="Out" required>
+  The output data from the tool
+</ResponseField>
+
+<ResponseField name="error" type="Option&lt;String&gt;">
+  Error message if execution failed
+</ResponseField>
+
+<ResponseField name="metadata" type="HashMap&lt;String, String&gt;">
+  Additional metadata about the execution
+</ResponseField>
+
+#### Helper Methods
+
+```rust
+// Create success result
+ToolResult::success(output)
+
+// Create text success result
+ToolResult::success_text("Operation completed")
+
+// Create failure result
+ToolResult::failure("Error message")
+
+// Add metadata
+result.with_metadata("duration_ms", "123")
+
+// Get text output
+result.as_text()
+
+// Convert to string
+result.to_string_output()
+```
+
+### ToolMetadata
+
+```rust
+pub struct ToolMetadata {
+    pub category: Option<String>,
+    pub tags: Vec<String>,
+    pub is_dangerous: bool,
+    pub requires_network: bool,
+    pub requires_filesystem: bool,
+    pub custom: HashMap<String, serde_json::Value>,
+}
+```
+
+Metadata describing tool capabilities and requirements.
+
+#### Builder Methods
+
+```rust
+ToolMetadata::new()
+    .with_category("web")
+    .with_tag("search")
+    .with_tag("http")
+    .dangerous()
+    .needs_network()
+    .needs_filesystem()
+```
+
+## Implementing a Custom Tool
+
+### Basic Implementation
+
+```rust
+use mofa_kernel::agent::components::tool::*;
+use mofa_kernel::agent::context::AgentContext;
+use mofa_kernel::agent::error::AgentResult;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize)]
+struct CalculatorArgs {
+    operation: String,
+    a: f64,
+    b: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CalculatorOutput {
+    result: f64,
+}
+
+struct Calculator;
+
+#[async_trait]
+impl Tool<CalculatorArgs, CalculatorOutput> for Calculator {
+    fn name(&self) -> &str {
+        "calculator"
+    }
+
+    fn description(&self) -> &str {
+        "Perform arithmetic operations: add, subtract, multiply, divide"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": ["add", "sub", "mul", "div"],
+                    "description": "The arithmetic operation"
+                },
+                "a": { "type": "number" },
+                "b": { "type": "number" }
+            },
+            "required": ["operation", "a", "b"]
+        })
+    }
+
+    async fn execute(
+        &self,
+        input: ToolInput<CalculatorArgs>,
+        _ctx: &AgentContext,
+    ) -> ToolResult<CalculatorOutput> {
+        let args = input.args();
+        
+        let result = match args.operation.as_str() {
+            "add" => args.a + args.b,
+            "sub" => args.a - args.b,
+            "mul" => args.a * args.b,
+            "div" => {
+                if args.b == 0.0 {
+                    return ToolResult::failure("Division by zero");
+                }
+                args.a / args.b
+            }
+            _ => return ToolResult::failure("Unknown operation"),
+        };
+
+        ToolResult::success(CalculatorOutput { result })
+    }
+
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata::new()
+            .with_category("math")
+            .with_tag("arithmetic")
+    }
+
+    fn validate_input(&self, input: &ToolInput<CalculatorArgs>) -> AgentResult<()> {
+        let args = input.args();
+        if args.operation == "div" && args.b == 0.0 {
+            return Err(AgentError::InvalidInput("Cannot divide by zero".to_string()));
+        }
+        Ok(())
+    }
+}
+```
+
+### Using JSON Values (Simpler)
+
+```rust
+use mofa_kernel::agent::components::tool::*;
+use async_trait::async_trait;
+
+struct EchoTool;
+
+#[async_trait]
+impl Tool for EchoTool {
+    fn name(&self) -> &str {
+        "echo"
+    }
+
+    fn description(&self) -> &str {
+        "Echo back the input message"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The message to echo"
+                }
+            },
+            "required": ["message"]
+        })
+    }
+
+    async fn execute(
+        &self,
+        input: ToolInput,
+        _ctx: &AgentContext,
+    ) -> ToolResult {
+        if let Some(message) = input.get_str("message") {
+            ToolResult::success_text(format!("Echo: {}", message))
+        } else {
+            ToolResult::failure("Missing message parameter")
+        }
+    }
+}
+```
+
+## Tool Registration
+
+Tools must be registered with a `ToolRegistry` to be used by agents:
+
+```rust
+use mofa_kernel::agent::components::tool::{ToolRegistry, ToolExt};
+
+// Create tool
+let calculator = Calculator;
+
+// Convert to dynamic tool and register
+let dyn_tool = calculator.into_dynamic();
+registry.register(dyn_tool)?;
+
+// Use in agent
+let response = registry.execute(
+    "calculator",
+    ToolInput::from_json(serde_json::json!({
+        "operation": "add",
+        "a": 10.0,
+        "b": 5.0
+    })),
+    &ctx,
+).await?;
+```
+
+## ToolRegistry Trait
+
+```rust
+#[async_trait]
+pub trait ToolRegistry: Send + Sync {
+    fn register(&mut self, tool: Arc<dyn DynTool>) -> AgentResult<()>;
+    fn register_all(&mut self, tools: Vec<Arc<dyn DynTool>>) -> AgentResult<()>;
+    fn get(&self, name: &str) -> Option<Arc<dyn DynTool>>;
+    fn unregister(&mut self, name: &str) -> AgentResult<bool>;
+    fn list(&self) -> Vec<ToolDescriptor>;
+    fn list_names(&self) -> Vec<String>;
+    fn contains(&self, name: &str) -> bool;
+    fn count(&self) -> usize;
+    async fn execute<Args, Out>(
+        &self,
+        name: &str,
+        input: ToolInput<Args>,
+        ctx: &AgentContext,
+    ) -> AgentResult<ToolResult<Out>>;
+    fn to_llm_tools(&self) -> Vec<LLMTool>;
+}
+```
+
+## Best Practices
+
+1. **Descriptive Names**: Use clear, action-oriented names like `calculator`, `web_search`, `file_read`
+2. **Detailed Schemas**: Provide comprehensive JSON schemas with descriptions for all parameters
+3. **Error Handling**: Return descriptive error messages in `ToolResult::failure()`
+4. **Validation**: Implement `validate_input()` for early error detection
+5. **Metadata**: Set appropriate metadata for dangerous operations, network/filesystem requirements
+6. **Type Safety**: Use strongly-typed `Args` and `Out` generics when possible
+7. **Context Usage**: Leverage `AgentContext` for shared resources like memory and state
+8. **Thread Safety**: Ensure implementations are `Send + Sync` for concurrent execution
+
+## Complete Example
+
+```rust
+use mofa_kernel::agent::components::tool::*;
+use mofa_kernel::agent::context::AgentContext;
+use async_trait::async_trait;
+use std::sync::Arc;
+
+// Define a weather query tool
+struct WeatherTool;
+
+#[async_trait]
+impl Tool for WeatherTool {
+    fn name(&self) -> &str {
+        "weather_query"
+    }
+
+    fn description(&self) -> &str {
+        "Get current weather information for a city"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "The city name"
+                },
+                "units": {
+                    "type": "string",
+                    "enum": ["celsius", "fahrenheit"],
+                    "description": "Temperature units",
+                    "default": "celsius"
+                }
+            },
+            "required": ["city"]
+        })
+    }
+
+    async fn execute(&self, input: ToolInput, _ctx: &AgentContext) -> ToolResult {
+        let city = input.get_str("city").unwrap_or("Unknown");
+        let units = input.get_str("units").unwrap_or("celsius");
+        
+        // Simulate API call
+        let temp = if units == "celsius" { 22.0 } else { 71.6 };
+        
+        ToolResult::success(serde_json::json!({
+            "city": city,
+            "temperature": temp,
+            "units": units,
+            "condition": "Sunny"
+        }))
+        .with_metadata("source", "weather_api")
+    }
+
+    fn metadata(&self) -> ToolMetadata {
+        ToolMetadata::new()
+            .with_category("web")
+            .with_tag("api")
+            .needs_network()
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Register and use the tool
+    let tool = WeatherTool;
+    let input = ToolInput::from_json(serde_json::json!({
+        "city": "Tokyo",
+        "units": "celsius"
+    }));
+    
+    let ctx = AgentContext::default();
+    let result = tool.execute(input, &ctx).await;
+    
+    println!("Weather result: {:?}", result);
+    Ok(())
+}
+```
+
+## Related
+
+- [ToolRegistry](/api/types#toolregistry) - Tool registration and management
+- [AgentContext](/api/agent-context) - Agent execution context
+- [ReAct Agent](/api/react-agent) - Agent that uses tools
+- [Tool Plugin](/api/tool-plugin) - Plugin system integration

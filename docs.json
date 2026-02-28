@@ -116,7 +116,15 @@
               "api/llm-client",
               "api/openai-provider",
               "api/anthropic-provider",
+              "api/gemini-provider",
               "api/ollama-provider"
+            ]
+          },
+          {
+            "group": "Components",
+            "pages": [
+              "api/tool-trait",
+              "api/memory-trait"
             ]
           },
           {

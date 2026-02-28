@@ -1,0 +1,675 @@
+---
+title: 'Memory Trait'
+description: 'Memory and state persistence interface for MoFA agents'
+icon: 'database'
+---
+
+## Overview
+
+The `Memory` trait defines the standard interface for agent memory and state persistence in the MoFA framework. It provides capabilities for storing, retrieving, and searching memory items, as well as managing conversation history.
+
+All memory implementations (in-memory, database-backed, vector stores) implement this trait to provide a unified API for agents.
+
+## Trait Definition
+
+```rust
+#[async_trait]
+pub trait Memory: Send + Sync {
+    async fn store(&mut self, key: &str, value: MemoryValue) -> AgentResult<()>;
+    async fn retrieve(&self, key: &str) -> AgentResult<Option<MemoryValue>>;
+    async fn remove(&mut self, key: &str) -> AgentResult<bool>;
+    async fn contains(&self, key: &str) -> AgentResult<bool>;
+    async fn search(&self, query: &str, limit: usize) -> AgentResult<Vec<MemoryItem>>;
+    async fn clear(&mut self) -> AgentResult<()>;
+    async fn get_history(&self, session_id: &str) -> AgentResult<Vec<Message>>;
+    async fn add_to_history(&mut self, session_id: &str, message: Message) -> AgentResult<()>;
+    async fn clear_history(&mut self, session_id: &str) -> AgentResult<()>;
+    async fn stats(&self) -> AgentResult<MemoryStats>;
+    fn memory_type(&self) -> &str;
+}
+```
+
+## Core Methods
+
+### Storage Operations
+
+<ParamField path="store" type="async fn(&mut self, key: &str, value: MemoryValue) -> AgentResult&lt;()&gt;" required>
+  Stores a memory item with the given key and value.
+  
+  **Parameters:**
+  - `key`: Unique identifier for the memory item
+  - `value`: The memory value to store (text, embedding, structured data, or binary)
+  
+  **Example:**
+  ```rust
+  memory.store("user_preference", MemoryValue::text("Dark mode")).await?;
+  memory.store("user_data", MemoryValue::structured(json!({
+      "name": "Alice",
+      "age": 30
+  }))).await?;
+  ```
+</ParamField>
+
+<ParamField path="retrieve" type="async fn(&self, key: &str) -> AgentResult&lt;Option&lt;MemoryValue&gt;&gt;" required>
+  Retrieves a memory item by key.
+  
+  **Parameters:**
+  - `key`: The key to look up
+  
+  **Returns:**
+  - `Some(MemoryValue)` if found, `None` if not found
+  
+  **Example:**
+  ```rust
+  if let Some(value) = memory.retrieve("user_preference").await? {
+      println!("Preference: {}", value.as_text().unwrap());
+  }
+  ```
+</ParamField>
+
+<ParamField path="remove" type="async fn(&mut self, key: &str) -> AgentResult&lt;bool&gt;" required>
+  Removes a memory item by key.
+  
+  **Parameters:**
+  - `key`: The key to remove
+  
+  **Returns:**
+  - `true` if the item was removed, `false` if it didn't exist
+  
+  **Example:**
+  ```rust
+  let removed = memory.remove("old_data").await?;
+  ```
+</ParamField>
+
+<ParamField path="contains" type="async fn(&self, key: &str) -> AgentResult&lt;bool&gt;" default="retrieve().is_some()">
+  Checks if a memory item exists.
+  
+  **Parameters:**
+  - `key`: The key to check
+  
+  **Returns:**
+  - `true` if the item exists, `false` otherwise
+</ParamField>
+
+<ParamField path="clear" type="async fn(&mut self) -> AgentResult&lt;()&gt;" required>
+  Clears all memory items (does not clear conversation history).
+  
+  **Example:**
+  ```rust
+  memory.clear().await?;
+  ```
+</ParamField>
+
+### Semantic Search
+
+<ParamField path="search" type="async fn(&self, query: &str, limit: usize) -> AgentResult&lt;Vec&lt;MemoryItem&gt;&gt;" required>
+  Performs semantic search over stored memories.
+  
+  **Parameters:**
+  - `query`: The search query string
+  - `limit`: Maximum number of results to return
+  
+  **Returns:**
+  - Vector of `MemoryItem` sorted by relevance (highest score first)
+  
+  **Example:**
+  ```rust
+  let results = memory.search("user preferences", 5).await?;
+  for item in results {
+      println!("Found: {} (score: {})", item.key, item.score);
+  }
+  ```
+</ParamField>
+
+### Conversation History
+
+<ParamField path="get_history" type="async fn(&self, session_id: &str) -> AgentResult&lt;Vec&lt;Message&gt;&gt;" required>
+  Retrieves conversation history for a session.
+  
+  **Parameters:**
+  - `session_id`: The conversation session identifier
+  
+  **Returns:**
+  - Vector of messages in chronological order
+  
+  **Example:**
+  ```rust
+  let history = memory.get_history("session_123").await?;
+  for msg in history {
+      println!("{}: {}", msg.role, msg.content);
+  }
+  ```
+</ParamField>
+
+<ParamField path="add_to_history" type="async fn(&mut self, session_id: &str, message: Message) -> AgentResult&lt;()&gt;" required>
+  Adds a message to conversation history.
+  
+  **Parameters:**
+  - `session_id`: The conversation session identifier
+  - `message`: The message to add
+  
+  **Example:**
+  ```rust
+  let message = Message::user("Hello, assistant!");
+  memory.add_to_history("session_123", message).await?;
+  ```
+</ParamField>
+
+<ParamField path="clear_history" type="async fn(&mut self, session_id: &str) -> AgentResult&lt;()&gt;" required>
+  Clears conversation history for a session.
+  
+  **Parameters:**
+  - `session_id`: The conversation session identifier
+  
+  **Example:**
+  ```rust
+  memory.clear_history("session_123").await?;
+  ```
+</ParamField>
+
+### Metadata
+
+<ParamField path="stats" type="async fn(&self) -> AgentResult&lt;MemoryStats&gt;" default="MemoryStats::default()">
+  Returns statistics about memory usage.
+  
+  **Returns:**
+  - `MemoryStats` containing counts and memory usage information
+  
+  **Example:**
+  ```rust
+  let stats = memory.stats().await?;
+  println!("Total items: {}", stats.total_items);
+  println!("Total sessions: {}", stats.total_sessions);
+  ```
+</ParamField>
+
+<ParamField path="memory_type" type="fn() -> &amp;str" default="memory">
+  Returns the type name of this memory implementation.
+  
+  **Example:**
+  ```rust
+  println!("Using: {}", memory.memory_type());
+  ```
+</ParamField>
+
+## Core Types
+
+### MemoryValue
+
+```rust
+#[non_exhaustive]
+pub enum MemoryValue {
+    Text(String),
+    Embedding(Vec<f32>),
+    Structured(serde_json::Value),
+    Binary(Vec<u8>),
+    TextWithEmbedding { text: String, embedding: Vec<f32> },
+}
+```
+
+Represents different types of memory values.
+
+#### Constructors
+
+```rust
+// Create text value
+MemoryValue::text("Hello world")
+
+// Create embedding value
+MemoryValue::embedding(vec![0.1, 0.2, 0.3])
+
+// Create structured value
+MemoryValue::structured(serde_json::json!({ "key": "value" }))
+
+// Create text with embedding
+MemoryValue::text_with_embedding("Hello", vec![0.1, 0.2])
+```
+
+#### Helper Methods
+
+```rust
+// Get text content
+if let Some(text) = value.as_text() {
+    println!("Text: {}", text);
+}
+
+// Get embedding vector
+if let Some(embedding) = value.as_embedding() {
+    println!("Dimension: {}", embedding.len());
+}
+
+// Get structured data
+if let Some(json) = value.as_structured() {
+    println!("Data: {}", json);
+}
+```
+
+### MemoryItem
+
+```rust
+pub struct MemoryItem {
+    pub key: String,
+    pub value: MemoryValue,
+    pub score: f32,
+    pub metadata: HashMap<String, String>,
+    pub created_at: u64,
+    pub last_accessed: u64,
+}
+```
+
+Represents a memory item with metadata (typically used in search results).
+
+<ResponseField name="key" type="String" required>
+  Unique identifier for the memory item
+</ResponseField>
+
+<ResponseField name="value" type="MemoryValue" required>
+  The stored memory value
+</ResponseField>
+
+<ResponseField name="score" type="f32" required>
+  Similarity score (0.0 - 1.0) for search results
+</ResponseField>
+
+<ResponseField name="metadata" type="HashMap&lt;String, String&gt;" required>
+  Additional metadata attached to the item
+</ResponseField>
+
+<ResponseField name="created_at" type="u64" required>
+  Unix timestamp (milliseconds) when item was created
+</ResponseField>
+
+<ResponseField name="last_accessed" type="u64" required>
+  Unix timestamp (milliseconds) of last access
+</ResponseField>
+
+#### Builder Methods
+
+```rust
+MemoryItem::new("key", MemoryValue::text("value"))
+    .with_score(0.95)
+    .with_metadata("source", "user_input")
+    .with_metadata("category", "preference")
+```
+
+### Message
+
+```rust
+pub struct Message {
+    pub role: MessageRole,
+    pub content: String,
+    pub timestamp: u64,
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+```
+
+Represents a conversation message.
+
+<ResponseField name="role" type="MessageRole" required>
+  The role of the message sender (System, User, Assistant, Tool)
+</ResponseField>
+
+<ResponseField name="content" type="String" required>
+  The message content
+</ResponseField>
+
+<ResponseField name="timestamp" type="u64" required>
+  Unix timestamp (milliseconds) when message was created
+</ResponseField>
+
+<ResponseField name="metadata" type="HashMap&lt;String, serde_json::Value&gt;" required>
+  Additional metadata attached to the message
+</ResponseField>
+
+#### Constructors
+
+```rust
+// Create system message
+Message::system("You are a helpful assistant")
+
+// Create user message
+Message::user("What is Rust?")
+
+// Create assistant message
+Message::assistant("Rust is a programming language...")
+
+// Create tool message
+Message::tool("calculator", "{\"result\": 42}")
+
+// Add metadata
+Message::user("Hello").with_metadata("lang", json!("en"))
+```
+
+### MessageRole
+
+```rust
+#[non_exhaustive]
+pub enum MessageRole {
+    System,
+    User,
+    Assistant,
+    Tool,
+}
+```
+
+Represents the role of a message sender.
+
+### MemoryStats
+
+```rust
+pub struct MemoryStats {
+    pub total_items: usize,
+    pub total_sessions: usize,
+    pub total_messages: usize,
+    pub memory_bytes: usize,
+}
+```
+
+Statistics about memory usage.
+
+<ResponseField name="total_items" type="usize" required>
+  Total number of stored memory items
+</ResponseField>
+
+<ResponseField name="total_sessions" type="usize" required>
+  Total number of conversation sessions
+</ResponseField>
+
+<ResponseField name="total_messages" type="usize" required>
+  Total number of messages across all sessions
+</ResponseField>
+
+<ResponseField name="memory_bytes" type="usize" required>
+  Approximate memory usage in bytes
+</ResponseField>
+
+## Implementing a Custom Memory
+
+### Basic In-Memory Implementation
+
+```rust
+use mofa_kernel::agent::components::memory::*;
+use async_trait::async_trait;
+use std::collections::HashMap;
+
+pub struct SimpleMemory {
+    data: HashMap<String, MemoryItem>,
+    history: HashMap<String, Vec<Message>>,
+}
+
+impl SimpleMemory {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::new(),
+            history: HashMap::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl Memory for SimpleMemory {
+    async fn store(&mut self, key: &str, value: MemoryValue) -> AgentResult<()> {
+        let item = MemoryItem::new(key, value);
+        self.data.insert(key.to_string(), item);
+        Ok(())
+    }
+
+    async fn retrieve(&self, key: &str) -> AgentResult<Option<MemoryValue>> {
+        Ok(self.data.get(key).map(|item| item.value.clone()))
+    }
+
+    async fn remove(&mut self, key: &str) -> AgentResult<bool> {
+        Ok(self.data.remove(key).is_some())
+    }
+
+    async fn search(&self, query: &str, limit: usize) -> AgentResult<Vec<MemoryItem>> {
+        let query_lower = query.to_lowercase();
+        let mut results: Vec<MemoryItem> = self
+            .data
+            .values()
+            .filter(|item| {
+                if let Some(text) = item.value.as_text() {
+                    text.to_lowercase().contains(&query_lower)
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        results.truncate(limit);
+        Ok(results)
+    }
+
+    async fn clear(&mut self) -> AgentResult<()> {
+        self.data.clear();
+        Ok(())
+    }
+
+    async fn get_history(&self, session_id: &str) -> AgentResult<Vec<Message>> {
+        Ok(self.history.get(session_id).cloned().unwrap_or_default())
+    }
+
+    async fn add_to_history(&mut self, session_id: &str, message: Message) -> AgentResult<()> {
+        self.history
+            .entry(session_id.to_string())
+            .or_insert_with(Vec::new)
+            .push(message);
+        Ok(())
+    }
+
+    async fn clear_history(&mut self, session_id: &str) -> AgentResult<()> {
+        self.history.remove(session_id);
+        Ok(())
+    }
+
+    async fn stats(&self) -> AgentResult<MemoryStats> {
+        Ok(MemoryStats {
+            total_items: self.data.len(),
+            total_sessions: self.history.len(),
+            total_messages: self.history.values().map(|v| v.len()).sum(),
+            memory_bytes: 0, // Approximate if needed
+        })
+    }
+
+    fn memory_type(&self) -> &str {
+        "simple_memory"
+    }
+}
+```
+
+## Usage Examples
+
+### Basic Storage and Retrieval
+
+```rust
+use mofa_foundation::agent::components::memory::*;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut memory = InMemoryStorage::new();
+
+    // Store text
+    memory.store("greeting", MemoryValue::text("Hello, world!")).await?;
+
+    // Store structured data
+    memory.store(
+        "user_profile",
+        MemoryValue::structured(serde_json::json!({
+            "name": "Alice",
+            "role": "developer",
+            "preferences": {
+                "theme": "dark",
+                "language": "rust"
+            }
+        }))
+    ).await?;
+
+    // Retrieve
+    if let Some(value) = memory.retrieve("greeting").await? {
+        println!("Greeting: {}", value.as_text().unwrap());
+    }
+
+    // Check existence
+    if memory.contains("user_profile").await? {
+        println!("Profile exists");
+    }
+
+    Ok(())
+}
+```
+
+### Conversation History
+
+```rust
+use mofa_kernel::agent::components::memory::*;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut memory = InMemoryStorage::new();
+    let session_id = "user_session_123";
+
+    // Add messages
+    memory.add_to_history(
+        session_id,
+        Message::system("You are a helpful assistant")
+    ).await?;
+
+    memory.add_to_history(
+        session_id,
+        Message::user("What is Rust?")
+    ).await?;
+
+    memory.add_to_history(
+        session_id,
+        Message::assistant("Rust is a systems programming language...")
+    ).await?;
+
+    // Retrieve history
+    let history = memory.get_history(session_id).await?;
+    for msg in history {
+        println!("{}: {}", msg.role, msg.content);
+    }
+
+    // Clear when done
+    memory.clear_history(session_id).await?;
+
+    Ok(())
+}
+```
+
+### Semantic Search
+
+```rust
+use mofa_foundation::agent::components::memory::*;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut memory = InMemoryStorage::new();
+
+    // Store multiple items
+    memory.store("fact1", MemoryValue::text("Rust is fast")).await?;
+    memory.store("fact2", MemoryValue::text("Rust is safe")).await?;
+    memory.store("fact3", MemoryValue::text("Python is dynamic")).await?;
+
+    // Search
+    let results = memory.search("Rust", 10).await?;
+    for item in results {
+        println!("Found: {} - {} (score: {})",
+            item.key,
+            item.value.as_text().unwrap(),
+            item.score
+        );
+    }
+
+    Ok(())
+}
+```
+
+### Working with Embeddings
+
+```rust
+use mofa_kernel::agent::components::memory::*;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut memory = InMemoryStorage::new();
+
+    // Store text with embedding (from LLM)
+    let text = "The capital of France is Paris";
+    let embedding = vec![0.1, 0.2, 0.3, 0.4]; // From embedding model
+    
+    memory.store(
+        "fact_france",
+        MemoryValue::text_with_embedding(text, embedding)
+    ).await?;
+
+    // Retrieve and access both
+    if let Some(value) = memory.retrieve("fact_france").await? {
+        if let Some(text) = value.as_text() {
+            println!("Text: {}", text);
+        }
+        if let Some(emb) = value.as_embedding() {
+            println!("Embedding dimension: {}", emb.len());
+        }
+    }
+
+    Ok(())
+}
+```
+
+### Memory Statistics
+
+```rust
+use mofa_foundation::agent::components::memory::*;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut memory = InMemoryStorage::new();
+
+    // Store some data
+    memory.store("key1", MemoryValue::text("value1")).await?;
+    memory.store("key2", MemoryValue::text("value2")).await?;
+    
+    memory.add_to_history("session1", Message::user("Hello")).await?;
+    memory.add_to_history("session1", Message::assistant("Hi")).await?;
+
+    // Get stats
+    let stats = memory.stats().await?;
+    println!("Items: {}", stats.total_items);
+    println!("Sessions: {}", stats.total_sessions);
+    println!("Messages: {}", stats.total_messages);
+    println!("Memory: {} bytes", stats.memory_bytes);
+
+    Ok(())
+}
+```
+
+## Built-in Implementations
+
+MoFA provides several memory implementations:
+
+- **InMemoryStorage**: Simple HashMap-based storage (mofa-foundation)
+- **PostgresMemory**: PostgreSQL-backed persistent storage (when `persistence-postgres` feature enabled)
+- **MySQLMemory**: MySQL-backed persistent storage (when `persistence-mysql` feature enabled)
+- **SQLiteMemory**: SQLite-backed persistent storage (when `persistence-sqlite` feature enabled)
+
+## Best Practices
+
+1. **Session Management**: Use descriptive session IDs like `user_{id}_{timestamp}`
+2. **Memory Cleanup**: Periodically clear old sessions to prevent unbounded growth
+3. **Embedding Storage**: Store embeddings alongside text for semantic search
+4. **Metadata Usage**: Add relevant metadata to items for filtering and categorization
+5. **Error Handling**: Handle `AgentResult` errors appropriately
+6. **Thread Safety**: Ensure implementations are `Send + Sync` for concurrent access
+7. **Search Limits**: Use reasonable limits for search to prevent performance issues
+8. **History Pruning**: Implement conversation history pruning for long sessions
+
+## Related
+
+- [AgentContext](/api/agent-context) - Agent execution context that includes memory
+- [ReAct Agent](/api/react-agent) - Agent that uses memory for reasoning
+- [Secretary Agent](/api/secretary-agent) - Agent with persistent memory
+- [Storage Plugin](/api/storage-plugin) - Plugin system integration
